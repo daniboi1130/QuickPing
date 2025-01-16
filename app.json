@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "QuickPing",
+    "slug": "quick-ping",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.anonymous.QuickPing"
+    },
+    "web": {
+      "Logo": "./assets/icon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "144c90a1-657b-4fe8-8ccd-5b1977f90d4f"
+      }
+    },
+    "owner": "danielgabay"
+  }
+}
