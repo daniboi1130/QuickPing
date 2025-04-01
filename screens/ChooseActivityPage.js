@@ -2,30 +2,43 @@ import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import Header from '../Header/Header'; // Adjust the path as necessary
 
+
 const ChooseActivityPage = ({ navigation }) => {
-  return (
+  return (<>
+    <Header title="Choose Activity" noBack={true}/>
     <View style={styles.container}>
-      <Header title="Choose Activity" /> {/* Use the Header component */}
+      
       <Text style={styles.headerText}>What would you like to do?</Text>
       
-      <TouchableOpacity style={styles.button}>
+      <TouchableOpacity 
+        style={styles.button}
+        onPress={() => navigation.navigate('SendMessage')}
+      >
         <Text style={styles.buttonText}>Send Message</Text>
       </TouchableOpacity>
       
       <TouchableOpacity 
         style={styles.button}
-        onPress={() => navigation.navigate('ContactsEditorPage')}
+        onPress={() => navigation.navigate('ContactsEditor')}
       >
         <Text style={styles.buttonText}>Edit Saved Contacts</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 
         style={styles.button}
-        onPress={() => navigation.navigate('MessageEditorPage')}
+        onPress={() => navigation.navigate('MessageEditor')}
       >
-        <Text style={styles.buttonText}>Edit Saved Messages</Text>
+        <Text style={styles.buttonText}>Edit Saved Texts</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.button}
+        onPress={() => navigation.navigate('ContactList')}
+      >
+        <Text style={styles.buttonText}>Create Contact List</Text>
       </TouchableOpacity>
     </View>
+    </>
   );
 };
 
@@ -42,8 +55,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 5,
     marginBottom: 10,
-    width: 200,
-    height: 50,
+    width: 250,
+    height: 55,
   },
   buttonText: {
     color: '#fff',

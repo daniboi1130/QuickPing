@@ -14,7 +14,7 @@ import styles from "./Header.styles";
  * @param {string} title - The title to display in the header
  * @param {boolean} noBack - Whether to hide the back button
  */
-const Header = ({ title, noBack }) => {
+const Header = ({ title, noBack, noHamburger }) => {
     // Hooks
     const navigation = useNavigation();
 
@@ -42,12 +42,16 @@ const Header = ({ title, noBack }) => {
                 <Text style={styles.title}>{title}</Text>
 
                 {/* Drawer Menu Button */}
-                <TouchableOpacity 
-                    style={styles.rightIcon} 
-                    onPress={handleDrawerToggle}
-                >
-                    <Icon name="menu" size={38} color="black" />
-                </TouchableOpacity>
+                {noHamburger ? (
+                    <View style={styles.leftIcon} />
+                ) : (
+                    <TouchableOpacity 
+                        style={styles.rightIcon} 
+                        onPress={handleDrawerToggle}
+                    >
+                        <Icon name="menu" size={38} color="black" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Divider Line */}

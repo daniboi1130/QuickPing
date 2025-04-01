@@ -1,92 +1,113 @@
-import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ImageBackground, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TouchableOpacity, 
+  Image,
+  Dimensions,
+  Animated,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import Header from '../Header/Header'; // Import Header component
-
+import { auth } from '../Firebase/Config';
+import { onAuthStateChanged } from 'firebase/auth';
 
 function HomeScreen({ navigation }) {
+  const [user, setUser] = useState(null);
+  const fadeAnim = new Animated.Value(0);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+    });
+
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 1500,
+      useNativeDriver: true,
+    }).start();
+
+    return unsubscribe;
+  }, []);
+
   return (
     <View style={styles.container}>
-      <ImageBackground 
-        source={require('../assets/Logo.png')}
-        style={styles.backgroundImage}
-        resizeMode="contain"
-      >
-        <View style={styles.contentContainer}>
-          <Text style={styles.title}>QuickPing</Text>
-          <Text style={styles.subtitle}>Send messages quickly and easily</Text>
-          <TouchableOpacity 
-            style={styles.button}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.buttonText}>Start Messaging</Text>
-          </TouchableOpacity>
+      <StatusBar style="dark" />
+      <Animated.View style={[
+        styles.contentContainer,
+        { opacity: fadeAnim }
+      ]}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../assets/Logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </View>
-        <StatusBar translucent={true} hidden={true} />
-      </ImageBackground>
+        <Text style={styles.title}>Quick Ping</Text>
+        <Text style={styles.subtitle}>Instant Messaging Made Simple</Text>
+        <TouchableOpacity 
+          style={styles.button}
+          onPress={() => user ? navigation.navigate('ChooseActivity') : navigation.navigate('Login')}
+        >
+          <Text style={styles.buttonText}>GET STARTED</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
 
-const windowWidth = Dimensions.get('window').width;
-const windowHeight = Dimensions.get('window').height;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: 0,
-  },
-  backgroundImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
   },
   contentContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-
+  },
+  logoContainer: {
+    width: 180,
+    height: 180,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logo: {
     width: '100%',
-    paddingBottom: 100,
+    height: '100%',
   },
   title: {
     fontSize: 42,
-    fontWeight: 'bold',
-    color: '#007AFF', // iOS blue
-    marginBottom: 10,
-    textAlign: 'center',
+    fontWeight: '800',
+    color: '#000000',
+    marginBottom: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   subtitle: {
     fontSize: 18,
-    color: '#333333',
-    marginBottom: 40,
-    textAlign: 'center',
+    color: '#4A90E2',
+    marginBottom: 60,
+    letterSpacing: 1,
+    fontWeight: '500',
   },
   button: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
-    marginTop: 20,
+    width: '85%',
+    height: 58,
+    borderRadius: 12,
+    backgroundColor: '#007bff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 8,
-    zIndex: 1000,
+    fontWeight: '700',
+    letterSpacing: 1.5,
   },
 });
 
-export default HomeScreen; 
+export default HomeScreen;

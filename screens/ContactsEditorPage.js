@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,10 @@ import {
   FlatList,
 } from 'react-native';
 import Header from '../Header/Header'; // Import Header component
+import { db, auth } from '../Firebase/Config';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { useFocusEffect } from '@react-navigation/native';
 
 const ContactsEditorPage = () => {
   const [contacts, setContacts] = useState([]);
@@ -15,32 +19,98 @@ const ContactsEditorPage = () => {
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [user, setUser] = useState(null);
 
-  const addContact = () => {
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchContacts = async () => {
+        if (!user) return; // Don't fetch if not authenticated
+        
+        try {
+          const q = query(
+            collection(db, 'contacts'),
+            where('userId', '==', user.uid)
+          );
+          
+          const querySnapshot = await getDocs(q);
+          const contactsList = [];
+          querySnapshot.forEach((doc) => {
+            contactsList.push({ id: doc.id, ...doc.data() });
+          });
+          setContacts(contactsList);
+        } catch (error) {
+          console.error("Error fetching contacts: ", error);
+        }
+      };
+      
+      fetchContacts();
+    }, [user])
+  );
+
+  const addContact = async () => {
+    // Validate phone number length
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, ''); // Remove non-digits
+    if (cleanPhoneNumber.length < 10) {
+      alert('Phone number must be at least 10 digits');
+      return;
+    }
+
     if (firstName && lastName && phoneNumber) {
-      if (editingId) {
-        setContacts(
-          contacts.map((contact) =>
-            contact.id === editingId
-              ? { ...contact, firstName, lastName, phoneNumber }
-              : contact
-          )
-        );
-        setEditingId(null);
-      } else {
-        setContacts([
-          ...contacts,
-          {
-            id: Date.now().toString(),
+      try {
+        if (editingId) {
+          // Update existing contact
+          const contactRef = doc(db, 'contacts', editingId);
+          await updateDoc(contactRef, {
             firstName,
             lastName,
-            phoneNumber,
-          },
-        ]);
+            phoneNumber: cleanPhoneNumber, // Store clean phone number
+            userId: auth.currentUser?.uid
+          });
+          
+          setContacts(
+            contacts.map((contact) =>
+              contact.id === editingId
+                ? { ...contact, firstName, lastName, phoneNumber: cleanPhoneNumber }
+                : contact
+            )
+          );
+          setEditingId(null);
+        } else {
+          // Add new contact
+          const docRef = await addDoc(collection(db, 'contacts'), {
+            firstName,
+            lastName,
+            phoneNumber: cleanPhoneNumber, // Store clean phone number
+            userId: auth.currentUser?.uid,
+            createdAt: new Date().toISOString()
+          });
+          
+          setContacts([
+            ...contacts,
+            {
+              id: docRef.id,
+              firstName,
+              lastName,
+              phoneNumber: cleanPhoneNumber,
+            },
+          ]);
+        }
+        
+        // Clear form
+        setFirstName('');
+        setLastName('');
+        setPhoneNumber('');
+      } catch (error) {
+        console.error("Error adding/updating contact: ", error);
       }
-      setFirstName('');
-      setLastName('');
-      setPhoneNumber('');
     }
   };
 
@@ -51,8 +121,13 @@ const ContactsEditorPage = () => {
     setEditingId(contact.id);
   };
 
-  const deleteContact = (id) => {
-    setContacts(contacts.filter((contact) => contact.id !== id));
+  const deleteContact = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'contacts', id));
+      setContacts(contacts.filter((contact) => contact.id !== id));
+    } catch (error) {
+      console.error("Error deleting contact: ", error);
+    }
   };
 
   const renderContact = ({ item }) => (

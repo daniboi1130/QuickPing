@@ -1,36 +1,87 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, StatusBar } from 'react-native';
 import Header from '../Header/Header'; // Import Header component
+import { db } from '../Firebase/Config';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { auth } from '../Firebase/Config';
 
 const MessageEditorPage = () => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  const handleAddMessage = () => {
-    if (message.trim()) {
-      if (editingId !== null) {
-        setMessages(messages.map((item, index) => 
-          index === editingId ? message.trim() : item
-        ));
-        setEditingId(null);
-      } else {
-        setMessages([...messages, message.trim()]);
+  // Fetch messages when component mounts
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        const userId = auth.currentUser?.uid;
+        if (!userId) return;
+
+        const q = query(
+          collection(db, 'messages'),
+          where('userId', '==', userId)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const messagesList = [];
+        querySnapshot.forEach((doc) => {
+          messagesList.push({ id: doc.id, text: doc.data().text });
+        });
+        setMessages(messagesList);
+      } catch (error) {
+        console.error("Error fetching messages: ", error);
       }
-      setMessage('');
+    };
+    
+    fetchMessages();
+  }, []);
+
+  const handleAddMessage = async () => {
+    if (message.trim()) {
+      try {
+        if (editingId !== null) {
+          // Update existing message
+          const messageRef = doc(db, 'messages', editingId);
+          await updateDoc(messageRef, {
+            text: message.trim()
+          });
+          
+          setMessages(messages.map((item) => 
+            item.id === editingId ? { ...item, text: message.trim() } : item
+          ));
+          setEditingId(null);
+        } else {
+          // Add new message
+          const docRef = await addDoc(collection(db, 'messages'), {
+            text: message.trim(),
+            createdAt: new Date().toISOString(),
+            userId: auth.currentUser?.uid
+          });
+          
+          setMessages([...messages, { id: docRef.id, text: message.trim() }]);
+        }
+        setMessage('');
+      } catch (error) {
+        console.error("Error adding/updating message: ", error);
+      }
     }
   };
 
-  const handleEdit = (index, text) => {
+  const handleEdit = (id, text) => {
     setMessage(text);
-    setEditingId(index);
+    setEditingId(id);
   };
 
-  const handleDelete = (index) => {
-    setMessages(messages.filter((_, i) => i !== index));
-    if (editingId === index) {
-      setEditingId(null);
-      setMessage('');
+  const handleDelete = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'messages', id));
+      setMessages(messages.filter(msg => msg.id !== id));
+      if (editingId === id) {
+        setEditingId(null);
+        setMessage('');
+      }
+    } catch (error) {
+      console.error("Error deleting message: ", error);
     }
   };
 
@@ -53,20 +104,20 @@ const MessageEditorPage = () => {
 
         <FlatList
           data={messages}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={({ item, index }) => (
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
             <View style={styles.messageItem}>
-              <Text style={styles.messageText}>{item}</Text>
+              <Text style={styles.messageText}>{item.text}</Text>
               <View style={styles.messageActions}>
                 <TouchableOpacity 
                   style={[styles.actionButton, styles.editButton]}
-                  onPress={() => handleEdit(index, item)}
+                  onPress={() => handleEdit(item.id, item.text)}
                 >
                   <Text style={styles.actionButtonText}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDelete(index)}
+                  onPress={() => handleDelete(item.id)}
                 >
                   <Text style={styles.actionButtonText}>Delete</Text>
                 </TouchableOpacity>

@@ -5,16 +5,19 @@ import {
     DrawerItem 
 } from "@react-navigation/drawer";
 import { Text } from "react-native";
+import { auth } from "../../Firebase/Config";
+import { signOut } from "firebase/auth";
 
 // Screen imports
-import Login from "../../screens/Login";
-import Register from "../../screens/Register";
+
 import MessageEditorPage from "../../screens/MessageEditorPage";
 import ContactsEditor from "../../screens/ContactsEditorPage";
-
-// Styles and theme
+import ChooseActivityPage from "../../screens/ChooseActivityPage";
+import ContactListPage from "../../screens/ListEditing/ContactListPage";
+import SendMessage from "../../screens/SendMessage/SendMessage";
 import styles from "./DrawerNavigator.styles";
 import HomeScreen from "../../screens/HomeScreen";
+import TagEditPage from "../../screens/TagEditPage";
 
 // Initialize drawer navigator
 const Drawer = createDrawerNavigator();
@@ -28,21 +31,30 @@ const DRAWER_SCREENS = [
 
     },
     {
-        key: "Login",      
-        component: Login,
-    },
-    {
-        key: "Register",      
-        component: Register,
-    },
-    {
-        key: "Message Editor",
+        key: "MessageEditor",
         component: MessageEditorPage,
     },
     {
-        key: "Contacts Editor",      
+        key: "ContactsEditor",      
         component: ContactsEditor,
+    },
+    {
+        key: "ChooseActivity",
+        component: ChooseActivityPage,
+    },
+    {
+        key: "ContactList",
+        component: ContactListPage,
+    },
+    {
+        key: "SendMessage",
+        component: SendMessage,
+    },
+    {
+        key: "EditTags",
+        component: TagEditPage,
     }
+    
 ];
 
 /**
@@ -57,7 +69,7 @@ const DRAWER_SCREENS = [
  */
 const DrawerNavigator = () => {
     return (
-        <Drawer.Navigator
+        <Drawer.Navigator backBehavior="history"
             initialRouteName="HomeScreen"
             screenOptions={{
                 drawerPosition: "right",
@@ -90,6 +102,15 @@ const CustomDrawerContent = (props) => {
     const { routes, index } = props.state;
     const focused = routes[index];
 
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            props.navigation.navigate('HomeScreen');
+        } catch (error) {
+            console.error('Error logging out:', error);
+        }
+    };
+
     return (
         <DrawerContentScrollView {...props}>
             <Text style={styles.appName}>QuickPing</Text>
@@ -103,6 +124,15 @@ const CustomDrawerContent = (props) => {
                     activeTintColor="#ff6163"
                 />
             ))}
+            
+            {/* Add Logout Button */}
+            <DrawerItem
+                label="Logout"
+                onPress={handleLogout}
+                activeBackgroundColor="#fee0e1"
+                activeTintColor="#ff6163"
+                style={{ marginTop: 20 }}
+            />
         </DrawerContentScrollView>
     );
 };
