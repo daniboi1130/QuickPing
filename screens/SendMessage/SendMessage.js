@@ -93,7 +93,37 @@ const SendMessage = () => {
 
     const contactsArray = Array.from(uniqueContacts);
     setIsAutoSending(true);
-    await sendAutomatedMessages(contactsArray);
+    await sendMessages(contactsArray);
+  };
+
+  const sendMessages = async (contacts) => {
+    try {
+      for (let i = 0; i < contacts.length; i++) {
+        if (!isAutoSending) break; // Allow cancellation
+
+        const contact = contacts[i];
+        setCurrentIndex(i);
+
+        // Format phone number
+        const cleanNumber = contact.phoneNumber.replace(/\D/g, '');
+        const fullNumber = cleanNumber.startsWith('972') 
+          ? cleanNumber 
+          : `972${cleanNumber.startsWith('0') ? cleanNumber.substring(1) : cleanNumber}`;
+
+        // Open WhatsApp chat
+        const url = `whatsapp://send?text=${encodeURIComponent(customMessage)}&phone=+${fullNumber}`;
+        await Linking.openURL(url);
+
+        // Wait between messages
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Reset everything when done
+      completeMessaging();
+    } catch (error) {
+      console.error('Error in sending:', error);
+      alert('Error sending messages. Please try again.');
+    }
   };
 
   const sendAutomatedMessages = async (contacts) => {
