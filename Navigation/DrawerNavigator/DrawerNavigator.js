@@ -59,13 +59,6 @@ const DRAWER_SCREENS = [
 
 /**
  * DrawerNavigator Component
- * Implements a custom drawer navigation with right-to-left support
- * 
- * Features:
- * - Right-side drawer
- * - Custom styling
- * - No default headers
- * - Custom drawer content
  */
 const DrawerNavigator = () => {
     return (
@@ -94,8 +87,6 @@ const DrawerNavigator = () => {
 
 /**
  * CustomDrawerContent Component
- * Renders the content of the drawer menu
- * 
  * @param {Object} props - Navigation props from drawer
  */
 const CustomDrawerContent = (props) => {
