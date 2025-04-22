@@ -17,7 +17,7 @@ import ContactListPage from "../../screens/ListEditing/ContactListPage";
 import SendMessage from "../../screens/SendMessage/SendMessage";
 import styles from "./DrawerNavigator.styles";
 import HomeScreen from "../../screens/HomeScreen";
-import TagEditPage from "../../screens/TagEditPage";
+
 
 // Initialize drawer navigator
 const Drawer = createDrawerNavigator();
@@ -50,10 +50,7 @@ const DRAWER_SCREENS = [
         key: "SendMessage",
         component: SendMessage,
     },
-    {
-        key: "EditTags",
-        component: TagEditPage,
-    }
+
     
 ];
 

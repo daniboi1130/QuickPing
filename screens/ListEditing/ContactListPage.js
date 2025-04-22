@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { db, auth } from '../../Firebase/Config';
@@ -14,14 +14,10 @@ const ContactListPage = ({ navigation }) => {
   const [lists, setLists] = useState([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingList, setEditingList] = useState(null);
-  const [showTagSelection, setShowTagSelection] = useState(false);
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [tags, setTags] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNameListId, setEditingNameListId] = useState(null);
   const [editingNameValue, setEditingNameValue] = useState('');
 
-  // Fetch contacts from Firebase
   useFocusEffect(
     React.useCallback(() => {
       const fetchContacts = async () => {
@@ -29,7 +25,6 @@ const ContactListPage = ({ navigation }) => {
           const userId = auth.currentUser?.uid;
           if (!userId) return;
 
-          // Add query to filter by userId
           const q = query(
             collection(db, 'contacts'),
             where('userId', '==', userId)
@@ -55,7 +50,6 @@ const ContactListPage = ({ navigation }) => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      // Add query to filter by userId
       const q = query(
         collection(db, 'contactLists'),
         where('userId', '==', userId)
@@ -74,58 +68,9 @@ const ContactListPage = ({ navigation }) => {
 
   useFocusEffect(
     React.useCallback(() => {
-      const loadLists = async () => {
-        try {
-          const userId = auth.currentUser?.uid;
-          if (!userId) return;
-
-          const q = query(
-            collection(db, 'contactLists'),
-            where('userId', '==', userId)
-          );
-          
-          const querySnapshot = await getDocs(q);
-          const listData = [];
-          querySnapshot.forEach((doc) => {
-            listData.push({ id: doc.id, ...doc.data() });
-          });
-          setLists(listData);
-        } catch (error) {
-          console.error("Error fetching lists:", error);
-        }
-      };
-
-      loadLists();
-      return () => {
-        // Cleanup if needed
-      };
-    }, []) // Empty dependency array to ensure it runs on every focus
+      fetchLists();
+    }, [])
   );
-
-  const fetchTags = async () => {
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
-
-      const q = query(
-        collection(db, 'tags'),
-        where('userId', '==', userId)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const tagsData = [];
-      querySnapshot.forEach((doc) => {
-        tagsData.push({ id: doc.id, ...doc.data() });
-      });
-      setTags(tagsData);
-    } catch (error) {
-      console.error("Error fetching tags:", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchTags();
-  }, []);
 
   const handleCreateList = () => {
     if (listName.trim()) {
@@ -134,11 +79,12 @@ const ContactListPage = ({ navigation }) => {
   };
 
   const toggleContactSelection = (contact) => {
-    if (selectedContacts.find(c => c.id === contact.id)) {
-      setSelectedContacts(selectedContacts.filter(c => c.id !== contact.id));
-    } else {
-      setSelectedContacts([...selectedContacts, contact]);
-    }
+    setSelectedContacts(prev => {
+      const exists = prev.find(c => c.id === contact.id);
+      return exists 
+        ? prev.filter(c => c.id !== contact.id)
+        : [...prev, contact];
+    });
   };
 
   const handleSaveList = async () => {
@@ -149,40 +95,30 @@ const ContactListPage = ({ navigation }) => {
       }
 
       if (editingList) {
-        // Update existing list
         await updateDoc(doc(db, 'contactLists', editingList.id), {
           name: listName,
           contacts: selectedContacts,
-          tags: selectedTags,
           updatedAt: new Date().toISOString()
         });
       } else {
-        // Add new list
         await addDoc(collection(db, 'contactLists'), {
           name: listName,
           contacts: selectedContacts,
-          tags: selectedTags,
           createdAt: new Date().toISOString(),
           userId: auth.currentUser?.uid
         });
       }
 
-      // Clear form and reset states
       setListName('');
       setSelectedContacts([]);
-      setSelectedTags([]);
       setShowContacts(false);
-      setShowTagSelection(false);
       setIsCreating(false);
       setEditingList(null);
       
-      // Refresh lists
       await fetchLists();
-      
-      // Show success message
       alert(editingList ? 'List updated successfully!' : 'Contact list saved successfully!');
     } catch (error) {
-      console.error("Error saving contact list: ", error);
+      console.error("Error saving contact list:", error);
       alert('Error saving contact list');
     }
   };
@@ -192,11 +128,8 @@ const ContactListPage = ({ navigation }) => {
       "Delete List",
       "This action is irreversible. Are you sure you want to delete this list?",
       [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
+        { text: "Cancel", style: "cancel" },
+        { 
           text: "Delete",
           style: "destructive",
           onPress: async () => {
@@ -229,56 +162,6 @@ const ContactListPage = ({ navigation }) => {
     }
   };
 
-  const TagSelectionView = () => (
-    <>
-      <TouchableOpacity 
-        style={styles.backButton}
-        onPress={() => {
-          setShowTagSelection(false);
-          setShowContacts(true);
-        }}
-      >
-        <Text style={styles.backButtonText}>← Back to Contacts</Text>
-      </TouchableOpacity>
-      <Text style={styles.title}>
-        {editingList ? `Edit tags for "${listName}"` : `Select tags for "${listName}"`}
-      </Text>
-      <FlatList
-        data={tags}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.tagItem,
-              (selectedTags || []).map(tag => tag.id).includes(item.id) && 
-              styles.selectedTag
-            ]}
-            onPress={() => toggleTagSelection(item)}
-          >
-            <Text style={styles.tagText}>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-      />
-      <TouchableOpacity 
-        style={styles.saveButton}
-        onPress={handleSaveList}
-      >
-        <Text style={styles.buttonText}>Save List</Text>
-      </TouchableOpacity>
-    </>
-  );
-
-  const toggleTagSelection = (tag) => {
-    setSelectedTags(prevTags => {
-      const currentTags = prevTags || [];
-      const isSelected = currentTags.some(t => t.id === tag.id);
-      
-      return isSelected 
-        ? currentTags.filter(t => t.id !== tag.id)
-        : [...currentTags, tag];
-    });
-  };
-
   const filteredContacts = contacts.filter(contact => {
     const query = searchQuery.toLowerCase();
     const firstName = contact.firstName?.toLowerCase() || '';
@@ -295,9 +178,7 @@ const ContactListPage = ({ navigation }) => {
     setEditingList(null);
     setListName('');
     setSelectedContacts([]);
-    setSelectedTags([]);
     setShowContacts(false);
-    setShowTagSelection(false);
     setSearchQuery('');
   };
 
@@ -312,13 +193,6 @@ const ContactListPage = ({ navigation }) => {
               onPress={() => setIsCreating(true)}
             >
               <Text style={styles.buttonText}>Create New List</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.createButton, styles.editTagsButton]}
-              onPress={() => navigation.navigate('EditTags')}
-            >
-              <Text style={styles.buttonText}>Manage Tags</Text>
             </TouchableOpacity>
 
             <FlatList
@@ -366,14 +240,6 @@ const ContactListPage = ({ navigation }) => {
                   <Text style={styles.contactCount}>
                     {item.contacts.length} contacts
                   </Text>
-                  {/* Add tags display */}
-                  <View style={styles.tagContainer}>
-                    {item.tags?.map(tag => (
-                      <View key={tag.id} style={styles.tag}>
-                        <Text style={styles.tagLabel}>{tag.name}</Text>
-                      </View>
-                    ))}
-                  </View>
                   <View style={styles.listActions}>
                     <TouchableOpacity 
                       style={[styles.actionButton, styles.editButton]}
@@ -381,10 +247,8 @@ const ContactListPage = ({ navigation }) => {
                         setEditingList(item);
                         setListName(item.name);
                         setSelectedContacts(item.contacts);
-                        setSelectedTags(item.tags || []);
                         setIsCreating(true);
                         setShowContacts(true);
-                        setShowTagSelection(false);  // Start with contacts editing first
                       }}
                     >
                       <Text style={styles.actionButtonText}>Edit</Text>
@@ -402,7 +266,7 @@ const ContactListPage = ({ navigation }) => {
           </>
         ) : (
           <>
-            {showContacts && !showTagSelection ? (
+            {showContacts ? (
               <>
                 <TouchableOpacity 
                   style={styles.backButton}
@@ -419,7 +283,7 @@ const ContactListPage = ({ navigation }) => {
                   placeholderTextColor="#666"
                 />
                 <FlatList
-                  data={filteredContacts}  // Use filtered contacts instead of all contacts
+                  data={filteredContacts}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
                     <TouchableOpacity
@@ -438,29 +302,10 @@ const ContactListPage = ({ navigation }) => {
                 />
                 <TouchableOpacity 
                   style={styles.saveButton}
-                  onPress={() => {
-                    if (selectedContacts.length === 0) {
-                      alert('Please select at least one contact');
-                      return;
-                    }
-                    setShowTagSelection(true);
-                    setShowContacts(false);
-                  }}
+                  onPress={handleSaveList}
                 >
-                  <Text style={styles.buttonText}>
-                    {editingList ? 'Continue to Edit Tags' : 'Continue with selected contacts'}
-                  </Text>
+                  <Text style={styles.buttonText}>Save List</Text>
                 </TouchableOpacity>
-              </>
-            ) : showTagSelection ? (
-              <>
-                <TouchableOpacity 
-                  style={styles.backButton}
-                  onPress={handleCancel}
-                >
-                  <Text style={styles.backButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TagSelectionView />
               </>
             ) : (
               <View style={styles.nameInputContainer}>

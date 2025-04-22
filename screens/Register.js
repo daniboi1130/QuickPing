@@ -19,7 +19,7 @@ function Register({ navigation }) {
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log('User registered successfully:', userCredential.user.email);
-      navigation.navigate('HomeScreen');
+      navigation.navigate('Drawer', { screen: 'ChooseActivity' });
     } catch (error) {
       console.error(error);
       switch (error.code) {
