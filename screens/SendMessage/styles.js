@@ -63,8 +63,36 @@ export const styles = StyleSheet.create({
     marginHorizontal: 5,
     marginVertical: 2,
   },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  contactImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  contactInitials: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  initialsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  contactDetails: {
+    flex: 1,
+  },
   contactName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
   },
   contactPhone: {

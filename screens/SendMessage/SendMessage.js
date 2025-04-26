@@ -1,53 +1,71 @@
-import React, { useState } from 'react';
-import { Linking, View, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Alert, Linking, Text, TouchableOpacity, AppState } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { db, auth } from '../../Firebase/Config';
 import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db, auth } from '../../Firebase/Config';
 import Header from '../../Header/Header';
 import ListSelection from './ListSelection';
 import MessageComposition from './MessageComposition';
 import ConfirmationView from './ConfirmationView';
 import { styles } from './styles';
-import { AccessibilityInfo, findNodeHandle, NativeModules, Platform } from 'react-native';
 
 const SendMessage = () => {
   const navigation = useNavigation();
+
   const [contactLists, setContactLists] = useState([]);
+  const [savedMessages, setSavedMessages] = useState([]);
   const [selectedLists, setSelectedLists] = useState([]);
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [customMessage, setCustomMessage] = useState('');
-  const [savedMessages, setSavedMessages] = useState([]);
   const [showMessageSelect, setShowMessageSelect] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [expandedLists, setExpandedLists] = useState([]);
   const [isAutoSending, setIsAutoSending] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [expandedLists, setExpandedLists] = useState([]);
+  const [sendingContacts, setSendingContacts] = useState([]);
+  const [waitingToSendNext, setWaitingToSendNext] = useState(false);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchContactLists();
-      fetchSavedMessages();
-    }, [])
-  );
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  useEffect(() => {
+    fetchContactLists();
+    fetchSavedMessages();
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        if (isAutoSending && waitingToSendNext) {
+          const nextIndex = currentIndex + 1;
+          if (nextIndex < sendingContacts.length) {
+            setCurrentIndex(nextIndex);
+            sendNextMessage(nextIndex);
+          } else {
+            Alert.alert('Success', `Successfully sent messages to ${sendingContacts.length} contacts.`, [
+              { text: 'OK', onPress: completeMessaging }
+            ]);
+            setIsAutoSending(false);
+          }
+          setWaitingToSendNext(false);
+        }
+      }
+      setAppState(nextAppState);
+    });
+
+    return () => subscription.remove();
+  }, [appState, isAutoSending, waitingToSendNext, currentIndex, sendingContacts]);
 
   const fetchContactLists = async () => {
     try {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      const q = query(
-        collection(db, 'contactLists'),
-        where('userId', '==', userId)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const lists = [];
-      querySnapshot.forEach((doc) => {
-        lists.push({ id: doc.id, ...doc.data() });
-      });
+      const q = query(collection(db, 'contactLists'), where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      const lists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setContactLists(lists);
     } catch (error) {
-      console.error("Error fetching contact lists:", error);
+      console.error('Error fetching contact lists:', error);
     }
   };
 
@@ -56,162 +74,34 @@ const SendMessage = () => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      const q = query(
-        collection(db, 'messages'),
-        where('userId', '==', userId)
-      );
-
-      const querySnapshot = await getDocs(q);
-      const messagesList = [];
-      querySnapshot.forEach((doc) => {
-        messagesList.push({ id: doc.id, ...doc.data() });
-      });
-      setSavedMessages(messagesList);
+      const q = query(collection(db, 'messages'), where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSavedMessages(messages);
     } catch (error) {
-      console.error("Error fetching messages:", error);
+      console.error('Error fetching messages:', error);
     }
   };
 
   const handleBack = () => {
     if (showConfirmation) {
-      // When in confirmation view, go back to message composition
       setShowConfirmation(false);
-      setShowMessageSelect(true); // Add this line
+      setShowMessageSelect(true);
     } else if (showMessageSelect) {
-      // When in message composition, go back to list selection
       setShowMessageSelect(false);
     }
   };
 
-  const handleSendMessage = async () => {
-    const uniqueContacts = new Set();
-    
-    selectedLists.forEach(list => {
-      list.contacts.forEach(contact => uniqueContacts.add(contact));
-    });
-    selectedContacts.forEach(contact => uniqueContacts.add(contact));
-
-    const contactsArray = Array.from(uniqueContacts);
-    setIsAutoSending(true);
-    await sendMessages(contactsArray);
-  };
-
-  const sendMessages = async (contacts) => {
-    try {
-      for (let i = 0; i < contacts.length; i++) {
-        if (!isAutoSending) break; // Allow cancellation
-
-        const contact = contacts[i];
-        setCurrentIndex(i);
-
-        // Format phone number
-        const cleanNumber = contact.phoneNumber.replace(/\D/g, '');
-        const fullNumber = cleanNumber.startsWith('972') 
-          ? cleanNumber 
-          : `972${cleanNumber.startsWith('0') ? cleanNumber.substring(1) : cleanNumber}`;
-
-        // Open WhatsApp chat
-        const url = `whatsapp://send?text=${encodeURIComponent(customMessage)}&phone=+${fullNumber}`;
-        await Linking.openURL(url);
-
-        // Wait between messages
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      // Reset everything when done
-      completeMessaging();
-    } catch (error) {
-      console.error('Error in sending:', error);
-      alert('Error sending messages. Please try again.');
+  const handleConfirmMessage = () => {
+    if (!customMessage.trim()) {
+      Alert.alert('Error', 'Please enter a message.');
+      return;
     }
+    setShowConfirmation(true);
+    setShowMessageSelect(false);
   };
 
-  const sendAutomatedMessages = async (contacts) => {
-    try {
-      const enabled = await AccessibilityInfo.isScreenReaderEnabled();
-      if (!enabled) {
-        Alert.alert(
-          'Accessibility Service Required',
-          'Please enable Accessibility Service to use automated sending',
-          [
-            {
-              text: 'Open Settings',
-              onPress: () => {
-                if (Platform.OS === 'android') {
-                  Linking.openSettings();
-                  // or more specifically for accessibility:
-                  // Linking.sendIntent('android.settings.ACCESSIBILITY_SETTINGS');
-                }
-              },
-            },
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-          ],
-        );
-        return;
-      }
-
-      for (let i = 0; i < contacts.length; i++) {
-        if (!isAutoSending) break; // Allow cancellation
-
-        const contact = contacts[i];
-        setCurrentIndex(i);
-
-        // Format phone number
-        const cleanNumber = contact.phoneNumber.replace(/\D/g, '');
-        const fullNumber = cleanNumber.startsWith('972') 
-          ? cleanNumber 
-          : `972${cleanNumber.startsWith('0') ? cleanNumber.substring(1) : cleanNumber}`;
-
-        // Open WhatsApp chat
-        const url = `whatsapp://send?text=${encodeURIComponent(customMessage)}&phone=+${fullNumber}`;
-        await Linking.openURL(url);
-
-        // Wait for WhatsApp to open
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // Try to auto-send using accessibility service
-        if (NativeModules.AccessibilityBridge) {
-          const screenElements = await NativeModules.AccessibilityBridge.getScreenElements();
-          const sendButton = screenElements.find(element => 
-            element.className === 'android.widget.ImageButton' && 
-            element.contentDescription?.includes('Send')
-          );
-
-          if (sendButton?.nodeId) {
-            await NativeModules.AccessibilityBridge.clickOnElement(sendButton.nodeId);
-            console.log(`Message sent to ${fullNumber}`);
-          }
-        }
-
-        // Wait between messages
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      // Reset everything when done
-      completeMessaging();
-    } catch (error) {
-      console.error('Error in automated sending:', error);
-      alert('Error sending messages automatically. Falling back to manual mode.');
-      sendManualMessages(contacts);
-    }
-  };
-
-  const sendManualMessages = (contacts) => {
-    contacts.forEach((contact, index) => {
-      setTimeout(() => {
-        const cleanNumber = contact.phoneNumber.replace(/\D/g, '');
-        const fullNumber = cleanNumber.startsWith('972') 
-          ? cleanNumber 
-          : `972${cleanNumber.startsWith('0') ? cleanNumber.substring(1) : cleanNumber}`;
-
-        const url = `whatsapp://send?text=${encodeURIComponent(customMessage)}&phone=+${fullNumber}`;
-        Linking.openURL(url);
-      }, index * 3000);
-    });
-  };
+  const getTotalContacts = () => selectedContacts.length;
 
   const completeMessaging = () => {
     setIsAutoSending(false);
@@ -224,27 +114,69 @@ const SendMessage = () => {
     navigation.navigate('ChooseActivity');
   };
 
-  const handleConfirmMessage = () => {
-    if (!customMessage.trim()) {
-      alert('Please enter a message');
+  const handleSendMessage = async () => {
+    const uniqueContacts = new Set();
+
+    selectedLists.forEach(list => {
+      const foundList = contactLists.find(cl => cl.id === list.id);
+      if (foundList?.contacts) {
+        foundList.contacts.forEach(contact => uniqueContacts.add(JSON.stringify(contact)));
+      }
+    });
+    selectedContacts.forEach(contact => uniqueContacts.add(JSON.stringify(contact)));
+
+    const contactsArray = Array.from(uniqueContacts).map(contact => JSON.parse(contact));
+
+    if (contactsArray.length === 0) {
+      Alert.alert('Error', 'No contacts selected.');
       return;
     }
-    setShowConfirmation(true);
-    setShowMessageSelect(false);
+
+    setSendingContacts(contactsArray);
+    setIsAutoSending(true);
+    setCurrentIndex(0);
+    sendNextMessage(0);
   };
 
-  const getTotalContacts = () => selectedContacts.length;
+  const sendNextMessage = async (index) => {
+    if (index >= sendingContacts.length) {
+      Alert.alert('Success', `Successfully sent messages to ${sendingContacts.length} contacts.`, [
+        { text: 'OK', onPress: completeMessaging }
+      ]);
+      setIsAutoSending(false);
+      return;
+    }
 
-  // Add this component inside SendMessage but before the return statement
+    const contact = sendingContacts[index];
+    let phoneNumber = contact.phoneNumber.replace(/\D/g, '');
+    if (phoneNumber.startsWith('0')) {
+      phoneNumber = phoneNumber.substring(1);
+    }
+    if (!phoneNumber.startsWith('972')) {
+      phoneNumber = '972' + phoneNumber;
+    }
+
+    const messageText = encodeURIComponent(customMessage);
+    const waUrl = `https://wa.me/${phoneNumber}?text=${messageText}`;
+
+    console.log('Opening WhatsApp link:', waUrl);
+
+    try {
+      await Linking.openURL(waUrl);
+      setWaitingToSendNext(true);
+    } catch (error) {
+      console.error('Failed to open WhatsApp:', error);
+      Alert.alert('Error', 'Failed to open WhatsApp. Please make sure WhatsApp is installed.');
+      setIsAutoSending(false);
+    }
+  };
+
   const ProgressIndicator = () => (
     <View style={styles.progressContainer}>
       <Text style={styles.progressText}>
-        Sending message {currentIndex + 1} of {contactsArray.length}
+        Sending message {currentIndex + 1} of {sendingContacts.length}
       </Text>
-      <TouchableOpacity 
-        style={styles.cancelButton}
-        onPress={() => setIsAutoSending(false)}
-      >
+      <TouchableOpacity style={styles.cancelButton} onPress={() => setIsAutoSending(false)}>
         <Text style={styles.cancelButtonText}>Cancel</Text>
       </TouchableOpacity>
     </View>
@@ -254,8 +186,10 @@ const SendMessage = () => {
     <>
       <Header title="Send Message" />
       <View style={styles.container}>
-        {!showMessageSelect && !showConfirmation ? (
-          <ListSelection 
+        {isAutoSending ? (
+          <ProgressIndicator />
+        ) : !showMessageSelect && !showConfirmation ? (
+          <ListSelection
             contactLists={contactLists}
             selectedLists={selectedLists}
             selectedContacts={selectedContacts}
@@ -264,10 +198,10 @@ const SendMessage = () => {
             setSelectedContacts={setSelectedContacts}
             setExpandedLists={setExpandedLists}
             setShowMessageSelect={setShowMessageSelect}
-            getTotalContacts={getTotalContacts} // Add this prop
+            getTotalContacts={getTotalContacts}
           />
-        ) : showMessageSelect && !showConfirmation ? (
-          <MessageComposition 
+        ) : showMessageSelect ? (
+          <MessageComposition
             savedMessages={savedMessages}
             customMessage={customMessage}
             setCustomMessage={setCustomMessage}
@@ -275,10 +209,10 @@ const SendMessage = () => {
             handleConfirmMessage={handleConfirmMessage}
           />
         ) : (
-          <ConfirmationView 
+          <ConfirmationView
             selectedLists={selectedLists}
             selectedContacts={selectedContacts}
-            contactLists={contactLists} // Add this prop
+            contactLists={contactLists}
             customMessage={customMessage}
             getTotalContacts={getTotalContacts}
             handleBack={handleBack}

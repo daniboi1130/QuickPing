@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Image } from 'react-native';
 import { styles } from './styles';
 
 const ListSelection = ({ 
@@ -62,6 +62,44 @@ const ListSelection = ({
     setShowMessageSelect(true);
   };
 
+  const renderContactItem = (contact, listId) => {
+    const isSelected = selectedContacts.find(c => c.id === contact.id);
+    
+    return (
+      <TouchableOpacity
+        key={contact.id}
+        style={[
+          styles.contactItem,
+          isSelected && styles.selectedContact
+        ]}
+        onPress={() => toggleContactSelection(contact, listId)}
+      >
+        <View style={styles.contactRow}>
+          {contact.photoUri ? (
+            <Image 
+              source={{ uri: contact.photoUri }}
+              style={styles.contactImage}
+            />
+          ) : (
+            <View style={styles.contactInitials}>
+              <Text style={styles.initialsText}>
+                {contact.firstName?.[0]}{contact.lastName?.[0]}
+              </Text>
+            </View>
+          )}
+          <View style={styles.contactDetails}>
+            <Text style={styles.contactName}>
+              {contact.firstName} {contact.lastName}
+            </Text>
+            <Text style={styles.contactPhone}>
+              {contact.phoneNumber}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Select Contacts</Text>
@@ -99,23 +137,7 @@ const ListSelection = ({
                 
                 {expandedLists.includes(item.id) && (
                   <View style={styles.contactsContainer}>
-                    {item.contacts.map(contact => (
-                      <TouchableOpacity
-                        key={contact.id}
-                        style={[
-                          styles.contactItem,
-                          selectedContacts.find(c => c.id === contact.id) && styles.selectedContact
-                        ]}
-                        onPress={() => toggleContactSelection(contact, item.id)}
-                      >
-                        <Text style={styles.contactName}>
-                          {contact.firstName} {contact.lastName}
-                        </Text>
-                        <Text style={styles.contactPhone}>
-                          {contact.phoneNumber}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {item.contacts.map(contact => renderContactItem(contact, item.id))}
                   </View>
                 )}
               </View>

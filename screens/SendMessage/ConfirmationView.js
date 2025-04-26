@@ -72,16 +72,14 @@ const ConfirmationView = ({
           </View>
         </View>
 
-        <Text style={styles.automatedNote}>
-          Messages will be sent automatically using WhatsApp
-        </Text>
+
       </View>
 
       <TouchableOpacity 
         style={styles.sendButton}
         onPress={handleSendMessage}
       >
-        <Text style={styles.buttonText}>Start Automated Sending</Text>
+        <Text style={styles.buttonText}>Start Sending</Text>
       </TouchableOpacity>
     </View>
   );

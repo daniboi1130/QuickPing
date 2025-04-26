@@ -31,8 +31,13 @@
       }
     },
     "plugins": [
-      
-      
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to add pictures to your contacts.",
+          "cameraPermission": "The app needs access to camera to take photos of your contacts."
+        }
+      ]
     ],
     "owner": "danielgabay"
   }
