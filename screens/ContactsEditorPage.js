@@ -6,8 +6,10 @@ import {
   Alert, 
   StyleSheet, 
   TouchableOpacity, 
-  TextInput,
-  FlatList 
+  TextInput, 
+  FlatList,
+  SafeAreaView,
+  ScrollView
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { db, auth } from '../Firebase/Config';
@@ -18,11 +20,9 @@ import {
   addDoc, 
   deleteDoc, 
   query, 
-  where, 
-  getDocs 
+  onSnapshot 
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { useFocusEffect } from '@react-navigation/native';
 import Header from '../Header/Header';
 
 const ContactsEditorPage = () => {
@@ -33,46 +33,51 @@ const ContactsEditorPage = () => {
   const [editingId, setEditingId] = useState(null);
   const [user, setUser] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [showAllContacts, setShowAllContacts] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'contacts')),
+      (snapshot) => {
+        const contactsList = [];
+        snapshot.forEach((doc) => {
+          contactsList.push({ id: doc.id, ...doc.data() });
+        });
+
+        contactsList.sort((a, b) => 
+          new Date(b.createdAt) - new Date(a.createdAt)
+        );
+
+        setContacts(contactsList);
+      },
+      (error) => {
+        console.error("Error listening to contacts: ", error);
+        Alert.alert(
+          'Error',
+          'Failed to sync with database. Please check your connection.'
+        );
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      const fetchContacts = async () => {
-        if (!user) return; // Don't fetch if not authenticated
-        
-        try {
-          const q = query(
-            collection(db, 'contacts'),
-            where('userId', '==', user.uid)
-          );
-          
-          const querySnapshot = await getDocs(q);
-          const contactsList = [];
-          querySnapshot.forEach((doc) => {
-            contactsList.push({ id: doc.id, ...doc.data() });
-          });
-          setContacts(contactsList);
-        } catch (error) {
-          console.error("Error fetching contacts: ", error);
-        }
-      };
-      
-      fetchContacts();
-    }, [user])
-  );
-
   const addContact = async () => {
-    // Validate phone number length
-    const cleanPhoneNumber = phoneNumber.replace(/\D/g, ''); // Remove non-digits
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
     if (cleanPhoneNumber.length < 10) {
       alert('Phone number must be at least 10 digits');
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to add contacts');
       return;
     }
 
@@ -82,38 +87,21 @@ const ContactsEditorPage = () => {
           firstName,
           lastName,
           phoneNumber: cleanPhoneNumber,
-          userId: auth.currentUser?.uid,
+          createdAt: new Date().toISOString(),
           photoUri: selectedImage,
-          createdAt: new Date().toISOString()
+          userId: user.uid,
+          createdBy: user.email
         };
 
         if (editingId) {
-          // Update existing contact
           const contactRef = doc(db, 'contacts', editingId);
           await updateDoc(contactRef, contactData);
-          
-          setContacts(
-            contacts.map((contact) =>
-              contact.id === editingId
-                ? { ...contact, ...contactData }
-                : contact
-            )
-          );
+
           setEditingId(null);
         } else {
-          // Add new contact
-          const docRef = await addDoc(collection(db, 'contacts'), contactData);
-          
-          setContacts([ 
-            ...contacts,
-            {
-              id: docRef.id,
-              ...contactData
-            },
-          ]);
+          await addDoc(collection(db, 'contacts'), contactData);
         }
-        
-        // Clear form
+
         setFirstName('');
         setLastName('');
         setPhoneNumber('');
@@ -124,7 +112,15 @@ const ContactsEditorPage = () => {
     }
   };
 
+  const canModifyContact = (contact) => {
+    return contact.userId === user?.uid;
+  };
+
   const editContact = (contact) => {
+    if (!canModifyContact(contact)) {
+      Alert.alert('Permission Denied', 'You can only edit your own contacts');
+      return;
+    }
     setFirstName(contact.firstName);
     setLastName(contact.lastName);
     setPhoneNumber(contact.phoneNumber);
@@ -132,89 +128,23 @@ const ContactsEditorPage = () => {
   };
 
   const deleteContact = async (id) => {
+    const contact = contacts.find(c => c.id === id);
+    if (!canModifyContact(contact)) {
+      Alert.alert('Permission Denied', 'You can only delete your own contacts');
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, 'contacts', id));
-      setContacts(contacts.filter((contact) => contact.id !== id));
     } catch (error) {
       console.error("Error deleting contact: ", error);
     }
   };
 
-  const updateContactPhoto = async (contactId, photoUri) => {
-    try {
-      // Create a unique filename using contact ID and timestamp
-      const uniquePhotoUri = `${photoUri}?contactId=${contactId}&time=${Date.now()}`;
-      
-      // Update in Firestore
-      const contactRef = doc(db, 'contacts', contactId);
-      await updateDoc(contactRef, {
-        photoUri: uniquePhotoUri,
-        updatedAt: new Date().toISOString()
-      });
-
-      // Update local state immutably
-      setContacts(prevContacts => 
-        prevContacts.map(contact => {
-          if (contact.id === contactId) {
-            return {
-              ...contact,
-              photoUri: uniquePhotoUri
-            };
-          }
-          return contact;
-        })
-      );
-    } catch (error) {
-      console.error("Error updating contact photo:", error);
-      Alert.alert("Error", "Failed to update contact photo");
-    }
+  const updateContactPhoto = async (id, uri) => {
+    const contactRef = doc(db, 'contacts', id);
+    await updateDoc(contactRef, { photoUri: uri });
   };
-
-  const renderContact = ({ item }) => (
-    <View style={styles.contactItem}>
-      <View style={styles.contactMainInfo}>
-        {item.photoUri ? (
-          <Image 
-            key={`${item.id}-${item.photoUri}`}
-            source={{ uri: item.photoUri }}
-            style={styles.contactImage}
-          />
-        ) : (
-          <View style={styles.placeholderImage}>
-            <Text style={styles.placeholderText}>
-              {item.firstName?.[0]}{item.lastName?.[0]}
-            </Text>
-          </View>
-        )}
-        <View style={styles.contactInfo}>
-          <Text style={styles.contactText}>
-            {item.firstName} {item.lastName}
-          </Text>
-          <Text style={styles.phoneText}>{item.phoneNumber}</Text>
-        </View>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          onPress={() => pickImage(item)}
-          style={styles.iconButton}
-        >
-          <Text style={styles.cameraIcon}>📷</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.editButton]}
-          onPress={() => editContact(item)}
-        >
-          <Text style={styles.actionButtonText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
-          onPress={() => deleteContact(item.id)}
-        >
-          <Text style={styles.actionButtonText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
   const pickImage = async (contact) => {
     Alert.alert(
@@ -235,7 +165,6 @@ const ContactsEditorPage = () => {
               aspect: [1, 1],
               quality: 1,
             });
-
             if (!result.canceled) {
               await updateContactPhoto(contact.id, result.assets[0].uri);
             }
@@ -254,7 +183,6 @@ const ContactsEditorPage = () => {
               aspect: [1, 1],
               quality: 1,
             });
-
             if (!result.canceled) {
               await updateContactPhoto(contact.id, result.assets[0].uri);
             }
@@ -268,134 +196,211 @@ const ContactsEditorPage = () => {
     );
   };
 
-  // Add image picker button to the form
-  return (
-    <>
-      <Header title={'Contacts editor'}/>
-      <View style={styles.outerContainer}>
-        <View style={styles.container}>
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="First Name"
-              value={firstName}
-              onChangeText={setFirstName}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Last Name"
-              value={lastName}
-              onChangeText={setLastName}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Phone Number"
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              keyboardType="phone-pad"
-            />
-            <TouchableOpacity 
-              style={[styles.button, editingId ? styles.editingButton : null]} 
-              onPress={addContact}
-            >
-              <Text style={styles.buttonText}>
-                {editingId ? 'Update Contact' : 'Add Contact'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <FlatList
-            data={contacts}
-            renderItem={renderContact}
-            keyExtractor={(item) => item.id}
-            style={styles.list}
+  const renderContact = ({ item }) => (
+    <View style={styles.contactItem}>
+      <View style={styles.contactMainInfo}>
+        {item.photoUri ? (
+          <Image 
+            source={{ uri: item.photoUri }}
+            style={styles.contactImage}
           />
+        ) : (
+          <View style={styles.placeholderImage}>
+            <Text style={styles.placeholderText}>
+              {item.firstName?.[0]}{item.lastName?.[0]}
+            </Text>
+          </View>
+        )}
+        <View style={styles.contactInfo}>
+          <Text style={styles.contactText}>
+            {item.firstName} {item.lastName}
+          </Text>
+          <Text style={styles.phoneText}>{item.phoneNumber}</Text>
         </View>
       </View>
-    </>
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          onPress={() => pickImage(item)}
+          style={[styles.iconButton, !canModifyContact(item) && styles.disabledButton]}
+          disabled={!canModifyContact(item)}
+        >
+          <Text style={styles.cameraIcon}>📷</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.editButton, !canModifyContact(item) && styles.disabledButton]}
+          onPress={() => editContact(item)}
+          disabled={!canModifyContact(item)}
+        >
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteButton, !canModifyContact(item) && styles.disabledButton]}
+          onPress={() => deleteContact(item.id)}
+          disabled={!canModifyContact(item)}
+        >
+          <Text style={styles.actionButtonText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const getFilteredContacts = () => {
+    if (showAllContacts) {
+      return contacts;
+    }
+    return contacts.filter(contact => contact.userId === user?.uid);
+  };
+
+  return (
+    <SafeAreaView style={styles.outerContainer}>
+      <Header />
+      <View style={styles.container}>
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="First Name"
+            value={firstName}
+            onChangeText={setFirstName}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Last Name"
+            value={lastName}
+            onChangeText={setLastName}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Phone Number"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+          />
+          <TouchableOpacity style={styles.button} onPress={addContact}>
+            <Text style={styles.buttonText}>
+              {editingId ? "Update Contact" : "Add Contact"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity 
+          style={[
+            styles.filterButton,
+            showAllContacts ? styles.filterButtonActive : styles.filterButtonInactive
+          ]}
+          onPress={() => setShowAllContacts(!showAllContacts)}
+        >
+          <Text style={styles.filterButtonText}>
+            {showAllContacts ? "All Contacts" : "Personal Contacts"}
+          </Text>
+        </TouchableOpacity>
+
+        <FlatList
+          data={getFilteredContacts()}
+          renderItem={renderContact}
+          keyExtractor={(item) => item.id}
+          style={styles.list}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No contacts found</Text>
+          }
+        />
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  /* your same styles from before */
   outerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: '#fff',
   },
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#fff',
-    maxWidth: 400,
-    width: '100%',
-    maxHeight: '90%',
   },
   form: {
     marginBottom: 20,
-    width: '100%',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
-    padding: 15,
+    padding: 12,
     marginBottom: 12,
     borderRadius: 8,
-    fontSize: 16,
-    width: '100%',
   },
   button: {
     backgroundColor: '#007AFF',
-    padding: 15,
+    padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-    width: '100%',
-    marginTop: 8,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: 'bold',
   },
   list: {
     flex: 1,
-    width: '100%',
   },
   contactItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    marginBottom: 8,
+    padding: 10,
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+    marginBottom: 10,
+    backgroundColor: '#f9f9f9',
     borderRadius: 8,
   },
+  contactMainInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  contactImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  placeholderImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#ddd',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  placeholderText: {
+    fontSize: 18,
+    color: '#555',
+  },
+  contactInfo: {
+    flex: 1,
+  },
   contactText: {
+    fontWeight: 'bold',
     fontSize: 16,
-    fontWeight: '500',
   },
   phoneText: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    color: '#777',
   },
   actionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6, // Add consistent spacing between buttons
+  },
+  iconButton: {
+    marginHorizontal: 5,
+  },
+  cameraIcon: {
+    fontSize: 20,
   },
   actionButton: {
-    padding: 6, // Reduced from 8
-    borderRadius: 6,
-    minWidth: 60, // Reduced from 70
+    marginHorizontal: 5,
+    padding: 5,
+    borderRadius: 5,
     alignItems: 'center',
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 13, // Reduced from 14
-    fontWeight: '500',
   },
   editButton: {
     backgroundColor: '#2ecc71',
@@ -403,41 +408,38 @@ const styles = StyleSheet.create({
   deleteButton: {
     backgroundColor: '#e74c3c',
   },
-  editingButton: {
+  disabledButton: {
+    opacity: 0.5,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 30,
+    fontSize: 16,
+    color: '#aaa',
+  },
+  toggleButton: {
+    textAlign: 'center',
+    marginVertical: 10,
+    fontSize: 16,
+    color: '#007AFF',
+  },
+  filterButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  filterButtonInactive: {
+    backgroundColor: '#e74c3c',
+  },
+  filterButtonActive: {
     backgroundColor: '#2ecc71',
   },
-  contactMainInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+  filterButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
-  iconButton: {
-    padding: 6, // Match other buttons
-    marginLeft: 0, // Remove margin since we're using gap
-  },
-  cameraIcon: {
-    fontSize: 18, // Slightly reduced from 20
-  },
-  contactImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 15,
-    backgroundColor: '#f0f0f0',
-  },
-  placeholderImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#e0e0e0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  placeholderText: {
-    fontSize: 18,
-    color: '#666',
-  }
 });
 
 export default ContactsEditorPage;

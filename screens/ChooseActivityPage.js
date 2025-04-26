@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import Header from '../Header/Header'; // Adjust the path as necessary
-
+import Header from '../Header/Header';
+import { auth } from '../Firebase/Config';
 
 const ChooseActivityPage = ({ navigation }) => {
+  const [userEmail, setUserEmail] = useState('');
+
+  useEffect(() => {
+    if (auth.currentUser) {
+      setUserEmail(auth.currentUser.email || '');
+    }
+  }, []);
+
   return (<>
     <Header title="Choose Activity" noBack={true}/>
     <View style={styles.container}>
-      
+      <Text style={styles.headerText}>Hello {userEmail}</Text>
       <Text style={styles.headerText}>What would you like to do?</Text>
       
       <TouchableOpacity 

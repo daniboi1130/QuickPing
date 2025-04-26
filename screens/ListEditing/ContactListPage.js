@@ -17,18 +17,13 @@ const ContactListPage = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNameListId, setEditingNameListId] = useState(null);
   const [editingNameValue, setEditingNameValue] = useState('');
+  const [showAllContacts, setShowAllContacts] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
       const fetchContacts = async () => {
         try {
-          const userId = auth.currentUser?.uid;
-          if (!userId) return;
-
-          const q = query(
-            collection(db, 'contacts'),
-            where('userId', '==', userId)
-          );
+          const q = query(collection(db, 'contacts'));
           
           const querySnapshot = await getDocs(q);
           const contactsList = [];
@@ -162,16 +157,12 @@ const ContactListPage = ({ navigation }) => {
     }
   };
 
-  const filteredContacts = contacts.filter(contact => {
-    const query = searchQuery.toLowerCase();
-    const firstName = contact.firstName?.toLowerCase() || '';
-    const lastName = contact.lastName?.toLowerCase() || '';
-    const phone = contact.phoneNumber?.toLowerCase() || '';
-
-    return firstName.includes(query) || 
-           lastName.includes(query) || 
-           phone.includes(query);
-  });
+  const getFilteredContacts = () => {
+    if (showAllContacts) {
+      return contacts;
+    }
+    return contacts.filter(contact => contact.userId === auth.currentUser?.uid);
+  };
 
   const handleCancel = () => {
     setIsCreating(false);
@@ -275,6 +266,19 @@ const ContactListPage = ({ navigation }) => {
                   <Text style={styles.backButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <Text style={styles.title}>Select contacts for "{listName}"</Text>
+
+                <TouchableOpacity 
+                  style={[
+                    styles.filterButton,
+                    showAllContacts ? styles.filterButtonActive : styles.filterButtonInactive
+                  ]}
+                  onPress={() => setShowAllContacts(!showAllContacts)}
+                >
+                  <Text style={styles.filterButtonText}>
+                    {showAllContacts ? "All Contacts" : "Personal Contacts"}
+                  </Text>
+                </TouchableOpacity>
+
                 <TextInput
                   style={styles.searchInput}
                   value={searchQuery}
@@ -283,7 +287,16 @@ const ContactListPage = ({ navigation }) => {
                   placeholderTextColor="#666"
                 />
                 <FlatList
-                  data={filteredContacts}
+                  data={getFilteredContacts().filter(contact => {
+                    const query = searchQuery.toLowerCase();
+                    const firstName = contact.firstName?.toLowerCase() || '';
+                    const lastName = contact.lastName?.toLowerCase() || '';
+                    const phone = contact.phoneNumber?.toLowerCase() || '';
+
+                    return firstName.includes(query) || 
+                           lastName.includes(query) || 
+                           phone.includes(query);
+                  })}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
                     <TouchableOpacity
@@ -297,6 +310,11 @@ const ContactListPage = ({ navigation }) => {
                         {item.firstName} {item.lastName}
                       </Text>
                       <Text style={styles.phoneText}>{item.phoneNumber}</Text>
+                      {item.userId !== auth.currentUser?.uid && (
+                        <Text style={styles.creatorText}>
+                          Added by: {'Anonymous'}
+                        </Text>
+                      )}
                     </TouchableOpacity>
                   )}
                 />

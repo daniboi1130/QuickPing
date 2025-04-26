@@ -147,4 +147,27 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fff',
   },
+  filterButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  filterButtonInactive: {
+    backgroundColor: '#e74c3c',
+  },
+  filterButtonActive: {
+    backgroundColor: '#2ecc71',
+  },
+  filterButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  creatorText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 2,
+  }
 });

@@ -40,7 +40,7 @@ const Login = ({ navigation }) => {
     <>
       <Header title={'Login'} noHamburger={true}/>
       <View style={styles.container}>
-        <Text style={styles.title}>Login</Text>
+       
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
