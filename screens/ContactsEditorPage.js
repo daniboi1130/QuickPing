@@ -253,7 +253,7 @@ const ContactsEditorPage = () => {
 
   return (
     <SafeAreaView style={styles.outerContainer}>
-      <Header />
+      <Header title='Contact Editor' />
       <View style={styles.container}>
         <View style={styles.form}>
           <TextInput

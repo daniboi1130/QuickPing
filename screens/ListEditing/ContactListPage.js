@@ -1,140 +1,287 @@
+/**
+ * Contact List Management Page
+ * 
+ * Provides a user interface for managing contact lists in the QuickPinger app.
+ * 
+ * Features:
+ * - Create new contact lists
+ * - Edit existing contact lists
+ * - Delete contact lists
+ * - Filter and search contacts
+ * - Toggle between personal and all contacts
+ * - Manage list members
+ * 
+ * @module ContactListPage
+ */
+
+/* -------------------------------------------------------------------------- */
+/*                               External Imports                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * React Core
+ * useState: Manage internal state
+ */
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert } from 'react-native';
+
+/**
+ * React Native Core Components
+ * View, Text, TextInput, TouchableOpacity, FlatList, Alert
+ * - Build the page layout, text, inputs, buttons, list, and popups
+ */
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  FlatList, 
+  Alert 
+} from 'react-native';
+
+/**
+ * React Navigation Hook
+ * useFocusEffect: Refresh data every time screen is focused
+ */
 import { useFocusEffect } from '@react-navigation/native';
+
+/* -------------------------------------------------------------------------- */
+/*                               Firebase Imports                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Firebase Config
+ * - Firestore Database (db) and Authentication (auth)
+ */
 import { db, auth } from '../../Firebase/Config';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
+
+/**
+ * Firebase Firestore Methods
+ * - Collection handling and real-time sync
+ */
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  deleteDoc, 
+  doc, 
+  updateDoc, 
+  query, 
+  where,
+  onSnapshot 
+} from 'firebase/firestore';
+
+/* -------------------------------------------------------------------------- */
+/*                               Internal Imports                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reusable Header Component
+ * - Displays consistent app headers
+ */
 import Header from '../../Header/Header';
+
+/**
+ * Stylesheet
+ * - Centralized styling for this page
+ */
 import { styles } from './ListPageStyles';
 
-const ContactListPage = ({ navigation }) => {
-  const [listName, setListName] = useState('');
-  const [contacts, setContacts] = useState([]);
-  const [selectedContacts, setSelectedContacts] = useState([]);
-  const [showContacts, setShowContacts] = useState(false);
-  const [lists, setLists] = useState([]);
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingList, setEditingList] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [editingNameListId, setEditingNameListId] = useState(null);
-  const [editingNameValue, setEditingNameValue] = useState('');
-  const [showAllContacts, setShowAllContacts] = useState(false);
+/* -------------------------------------------------------------------------- */
+/*                          ContactListPage Component                         */
+/* -------------------------------------------------------------------------- */
 
+/**
+ * Main page component
+ * @param {object} props - React props
+ * @param {object} props.navigation - React Navigation object
+ */
+const ContactListPage = ({ navigation }) => {
+
+  /* ------------------------------------------------------------------------ */
+  /*                             State Management                             */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Contact List Form State
+   */
+  const [listName, setListName] = useState(''); // List name input value
+  const [contacts, setContacts] = useState([]); // Full contact list
+  const [selectedContacts, setSelectedContacts] = useState([]); // Selected contacts for a list
+
+  /**
+   * UI Visibility Toggles
+   */
+  const [showContacts, setShowContacts] = useState(false); // Whether to show contact picker
+  const [isCreating, setIsCreating] = useState(false);     // Whether creating a new list
+  const [editingList, setEditingList] = useState(null);     // Currently editing list, if any
+
+  /**
+   * Search and Filter
+   */
+  const [searchQuery, setSearchQuery] = useState('');       // Search input text
+  const [showAllContacts, setShowAllContacts] = useState(false); // Show all or just personal contacts
+
+  /**
+   * Inline Name Editing
+   */
+  const [editingNameListId, setEditingNameListId] = useState(null); // List ID being renamed
+  const [editingNameValue, setEditingNameValue] = useState('');      // New name for list
+
+  /**
+   * All User Lists
+   */
+  const [lists, setLists] = useState([]); // All contact lists belonging to user
+
+  /* ------------------------------------------------------------------------ */
+  /*                     Firebase Realtime Data Synchronization               */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Listen to Contacts and Lists on Focus
+   * Automatically fetch and sync data when screen becomes active
+   */
   useFocusEffect(
     React.useCallback(() => {
-      const fetchContacts = async () => {
-        try {
-          const q = query(collection(db, 'contacts'));
-          
-          const querySnapshot = await getDocs(q);
-          const contactsList = [];
-          querySnapshot.forEach((doc) => {
-            contactsList.push({ id: doc.id, ...doc.data() });
-          });
-          setContacts(contactsList);
-        } catch (error) {
-          console.error("Error fetching contacts:", error);
+      const unsubscribeContacts = onSnapshot(
+        query(collection(db, 'contacts')),
+        (snapshot) => {
+          const contactsArray = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setContacts(contactsArray);
+        },
+        (error) => {
+          console.error('Error syncing contacts:', error);
+          Alert.alert('Error', 'Failed to sync contacts.');
         }
+      );
+
+      const unsubscribeLists = onSnapshot(
+        query(
+          collection(db, 'contactLists'),
+          where('userId', '==', auth.currentUser?.uid)
+        ),
+        (snapshot) => {
+          const listsArray = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setLists(listsArray);
+        },
+        (error) => {
+          console.error('Error syncing lists:', error);
+          Alert.alert('Error', 'Failed to sync lists.');
+        }
+      );
+
+      return () => {
+        unsubscribeContacts();
+        unsubscribeLists();
+      };
+    }, [])
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Helper Functions                              */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Filter contacts based on user filter settings
+   * 
+   * @returns {Array} - Filtered contacts list
+   */
+  const getFilteredContacts = () => {
+    let filtered = showAllContacts 
+      ? contacts 
+      : contacts.filter(contact => contact.userId === auth.currentUser?.uid);
+
+    if (searchQuery.trim()) {
+      const queryLower = searchQuery.toLowerCase();
+      filtered = filtered.filter(contact => 
+        (contact.firstName?.toLowerCase() || '').includes(queryLower) ||
+        (contact.lastName?.toLowerCase() || '').includes(queryLower) ||
+        (contact.phoneNumber?.toLowerCase() || '').includes(queryLower)
+      );
+    }
+
+    return filtered;
+  };
+
+  /**
+   * Toggle contact selection (add/remove contact from selected)
+   * 
+   * @param {Object} contact - Contact object
+   */
+  const toggleContactSelection = (contact) => {
+    if (selectedContacts.some(c => c.id === contact.id)) {
+      setSelectedContacts(prev => prev.filter(c => c.id !== contact.id));
+    } else {
+      setSelectedContacts(prev => [...prev, contact]);
+    }
+  };
+
+  /**
+   * Handle Create List Button Click
+   * Validate list name before moving to contact selection
+   */
+  const handleCreateList = () => {
+    if (!listName.trim()) {
+      Alert.alert('Error', 'Please enter a list name.');
+      return;
+    }
+    setShowContacts(true);
+  };
+
+  /**
+   * Save (Create or Update) Contact List to Firebase
+   */
+  const handleSaveList = async () => {
+    if (selectedContacts.length === 0) {
+      Alert.alert('Error', 'Please select at least one contact.');
+      return;
+    }
+
+    try {
+      const listData = {
+        name: listName,
+        contacts: selectedContacts,
+        updatedAt: new Date().toISOString()
       };
 
-      fetchContacts();
-    }, [])
-  );
-
-  const fetchLists = async () => {
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
-
-      const q = query(
-        collection(db, 'contactLists'),
-        where('userId', '==', userId)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const listData = [];
-      querySnapshot.forEach((doc) => {
-        listData.push({ id: doc.id, ...doc.data() });
-      });
-      setLists(listData);
-    } catch (error) {
-      console.error("Error fetching lists:", error);
-    }
-  };
-
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchLists();
-    }, [])
-  );
-
-  const handleCreateList = () => {
-    if (listName.trim()) {
-      setShowContacts(true);
-    }
-  };
-
-  const toggleContactSelection = (contact) => {
-    setSelectedContacts(prev => {
-      const exists = prev.find(c => c.id === contact.id);
-      return exists 
-        ? prev.filter(c => c.id !== contact.id)
-        : [...prev, contact];
-    });
-  };
-
-  const handleSaveList = async () => {
-    try {
-      if (selectedContacts.length === 0) {
-        alert('Please select at least one contact');
-        return;
-      }
-
       if (editingList) {
-        await updateDoc(doc(db, 'contactLists', editingList.id), {
-          name: listName,
-          contacts: selectedContacts,
-          updatedAt: new Date().toISOString()
-        });
+        await updateDoc(doc(db, 'contactLists', editingList.id), listData);
       } else {
         await addDoc(collection(db, 'contactLists'), {
-          name: listName,
-          contacts: selectedContacts,
+          ...listData,
           createdAt: new Date().toISOString(),
           userId: auth.currentUser?.uid
         });
       }
 
-      setListName('');
-      setSelectedContacts([]);
-      setShowContacts(false);
-      setIsCreating(false);
-      setEditingList(null);
-      
-      await fetchLists();
-      alert(editingList ? 'List updated successfully!' : 'Contact list saved successfully!');
+      resetForm();
+      Alert.alert('Success', editingList ? 'List updated!' : 'List created!');
     } catch (error) {
-      console.error("Error saving contact list:", error);
-      alert('Error saving contact list');
+      console.error('Error saving list:', error);
+      Alert.alert('Error', 'Failed to save list.');
     }
   };
 
-  const handleDeleteList = async (listId) => {
+  /**
+   * Delete Contact List from Firebase
+   * 
+   * @param {string} listId - ID of the list to delete
+   */
+  const handleDeleteList = (listId) => {
     Alert.alert(
-      "Delete List",
-      "This action is irreversible. Are you sure you want to delete this list?",
+      'Delete List',
+      'This action cannot be undone. Do you want to proceed?',
       [
-        { text: "Cancel", style: "cancel" },
+        { text: 'Cancel', style: 'cancel' },
         { 
-          text: "Delete",
-          style: "destructive",
+          text: 'Delete', 
+          style: 'destructive', 
           onPress: async () => {
             try {
               await deleteDoc(doc(db, 'contactLists', listId));
-              await fetchLists();
-              alert('List deleted successfully');
+              Alert.alert('Deleted', 'List successfully deleted.');
             } catch (error) {
-              console.error("Error deleting list:", error);
-              alert('Error deleting list');
+              console.error('Error deleting list:', error);
+              Alert.alert('Error', 'Failed to delete list.');
             }
           }
         }
@@ -142,43 +289,61 @@ const ContactListPage = ({ navigation }) => {
     );
   };
 
+  /**
+   * Update Name of an Existing List
+   * 
+   * @param {string} listId - ID of the list
+   * @param {string} newName - New name to set
+   */
   const handleUpdateListName = async (listId, newName) => {
+    if (!newName.trim()) return;
     try {
       await updateDoc(doc(db, 'contactLists', listId), {
         name: newName,
         updatedAt: new Date().toISOString()
       });
-      await fetchLists();
       setEditingNameListId(null);
       setEditingNameValue('');
     } catch (error) {
-      console.error("Error updating list name:", error);
-      alert('Error updating list name');
+      console.error('Error updating list name:', error);
+      Alert.alert('Error', 'Failed to update name.');
     }
   };
 
-  const getFilteredContacts = () => {
-    if (showAllContacts) {
-      return contacts;
-    }
-    return contacts.filter(contact => contact.userId === auth.currentUser?.uid);
-  };
-
-  const handleCancel = () => {
-    setIsCreating(false);
-    setEditingList(null);
+  /**
+   * Reset Form to Default Values
+   */
+  const resetForm = () => {
     setListName('');
     setSelectedContacts([]);
+    setIsCreating(false);
+    setEditingList(null);
     setShowContacts(false);
     setSearchQuery('');
   };
 
+  /**
+   * Handle Cancel Button Click
+   */
+  const handleCancel = () => {
+    resetForm();
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /*                            Render Component                              */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <>
+      {/* Page Header */}
       <Header title="Contact Lists" />
+
       <View style={styles.container}>
+
+        {/* Show List of Contact Lists */}
         {!isCreating && !editingList ? (
           <>
+            {/* Create New List Button */}
             <TouchableOpacity 
               style={styles.createButton}
               onPress={() => setIsCreating(true)}
@@ -186,38 +351,28 @@ const ContactListPage = ({ navigation }) => {
               <Text style={styles.buttonText}>Create New List</Text>
             </TouchableOpacity>
 
+            {/* List Existing Contact Lists */}
             <FlatList
               data={lists}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={styles.listItem}>
+                  
+                  {/* List Name and Inline Edit */}
                   <View style={styles.nameContainer}>
                     {editingNameListId === item.id ? (
-                      <View style={styles.nameEditContainer}>
-                        <TextInput
-                          style={styles.nameEditInput}
-                          value={editingNameValue}
-                          onChangeText={setEditingNameValue}
-                          autoFocus
-                          onBlur={() => {
-                            if (editingNameValue.trim()) {
-                              handleUpdateListName(item.id, editingNameValue);
-                            }
-                            setEditingNameListId(null);
-                          }}
-                          onSubmitEditing={() => {
-                            if (editingNameValue.trim()) {
-                              handleUpdateListName(item.id, editingNameValue);
-                            }
-                            setEditingNameListId(null);
-                          }}
-                        />
-                      </View>
+                      <TextInput
+                        style={styles.nameEditInput}
+                        value={editingNameValue}
+                        onChangeText={setEditingNameValue}
+                        autoFocus
+                        onBlur={() => handleUpdateListName(item.id, editingNameValue)}
+                        onSubmitEditing={() => handleUpdateListName(item.id, editingNameValue)}
+                      />
                     ) : (
                       <View style={styles.nameRow}>
                         <Text style={styles.listName}>{item.name}</Text>
-                        <TouchableOpacity 
-                          style={styles.editNameButton}
+                        <TouchableOpacity
                           onPress={() => {
                             setEditingNameListId(item.id);
                             setEditingNameValue(item.name);
@@ -228,9 +383,11 @@ const ContactListPage = ({ navigation }) => {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.contactCount}>
-                    {item.contacts.length} contacts
-                  </Text>
+
+                  {/* Contact Count */}
+                  <Text style={styles.contactCount}>{item.contacts.length} contacts</Text>
+
+                  {/* Edit and Delete Buttons */}
                   <View style={styles.listActions}>
                     <TouchableOpacity 
                       style={[styles.actionButton, styles.editButton]}
@@ -244,6 +401,7 @@ const ContactListPage = ({ navigation }) => {
                     >
                       <Text style={styles.actionButtonText}>Edit</Text>
                     </TouchableOpacity>
+
                     <TouchableOpacity 
                       style={[styles.actionButton, styles.deleteButton]}
                       onPress={() => handleDeleteList(item.id)}
@@ -257,6 +415,7 @@ const ContactListPage = ({ navigation }) => {
           </>
         ) : (
           <>
+            {/* Show Create List or Contact Picker */}
             {showContacts ? (
               <>
                 <TouchableOpacity 
@@ -265,20 +424,19 @@ const ContactListPage = ({ navigation }) => {
                 >
                   <Text style={styles.backButtonText}>Cancel</Text>
                 </TouchableOpacity>
+
                 <Text style={styles.title}>Select contacts for "{listName}"</Text>
 
                 <TouchableOpacity 
-                  style={[
-                    styles.filterButton,
-                    showAllContacts ? styles.filterButtonActive : styles.filterButtonInactive
-                  ]}
+                  style={[styles.filterButton, showAllContacts ? styles.filterButtonActive : styles.filterButtonInactive]}
                   onPress={() => setShowAllContacts(!showAllContacts)}
                 >
                   <Text style={styles.filterButtonText}>
-                    {showAllContacts ? "All Contacts" : "Personal Contacts"}
+                    {showAllContacts ? 'All Contacts' : 'Personal Contacts'}
                   </Text>
                 </TouchableOpacity>
 
+                {/* Search Bar */}
                 <TextInput
                   style={styles.searchInput}
                   value={searchQuery}
@@ -286,23 +444,16 @@ const ContactListPage = ({ navigation }) => {
                   placeholder="Search contacts..."
                   placeholderTextColor="#666"
                 />
-                <FlatList
-                  data={getFilteredContacts().filter(contact => {
-                    const query = searchQuery.toLowerCase();
-                    const firstName = contact.firstName?.toLowerCase() || '';
-                    const lastName = contact.lastName?.toLowerCase() || '';
-                    const phone = contact.phoneNumber?.toLowerCase() || '';
 
-                    return firstName.includes(query) || 
-                           lastName.includes(query) || 
-                           phone.includes(query);
-                  })}
+                {/* List of Filtered Contacts */}
+                <FlatList
+                  data={getFilteredContacts()}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       style={[
                         styles.contactItem,
-                        selectedContacts.find(c => c.id === item.id) && styles.selectedContact
+                        selectedContacts.some(c => c.id === item.id) && styles.selectedContact
                       ]}
                       onPress={() => toggleContactSelection(item)}
                     >
@@ -310,14 +461,11 @@ const ContactListPage = ({ navigation }) => {
                         {item.firstName} {item.lastName}
                       </Text>
                       <Text style={styles.phoneText}>{item.phoneNumber}</Text>
-                      {item.userId !== auth.currentUser?.uid && (
-                        <Text style={styles.creatorText}>
-                          Added by: {'Anonymous'}
-                        </Text>
-                      )}
                     </TouchableOpacity>
                   )}
                 />
+
+                {/* Save Button */}
                 <TouchableOpacity 
                   style={styles.saveButton}
                   onPress={handleSaveList}
@@ -333,12 +481,14 @@ const ContactListPage = ({ navigation }) => {
                 >
                   <Text style={styles.backButtonText}>Cancel</Text>
                 </TouchableOpacity>
+
                 <TextInput
                   style={styles.input}
                   value={listName}
                   onChangeText={setListName}
                   placeholder="Enter list name"
                 />
+
                 <TouchableOpacity 
                   style={styles.createButton}
                   onPress={handleCreateList}

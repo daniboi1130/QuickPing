@@ -5,7 +5,7 @@ const styles = StyleSheet.create({
         fontSize: 28,
         textAlign: "center",
         fontWeight: "bold",
-        color: 'blue',
+        color: 'black',
         marginTop: 25,
         marginBottom: 15,
     },

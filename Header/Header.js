@@ -1,32 +1,60 @@
-// External imports
+/**
+ * External imports from React and React Native libraries
+ * Required for basic component functionality and navigation
+ */
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import { useNavigation, DrawerActions } from "@react-navigation/native";
 
-// Styles
+/**
+ * Internal imports
+ * Styles for the Header component
+ */
 import styles from "./Header.styles";
 
 /**
  * Header Component
- * Displays a navigation header with back button, title, and drawer menu
- *
- * @param {string} title - The title to display in the header
- * @param {boolean} noBack - Whether to hide the back button
+ * Renders a navigation header with customizable back button, title, and hamburger menu
+ * 
+ * @component
+ * @param {Object} props - Component props
+ * @param {string} props.title - The text to display in the header center
+ * @param {boolean} [props.noBack=false] - If true, hides the back button
+ * @param {boolean} [props.noHamburger=false] - If true, hides the hamburger menu
+ * @returns {React.ReactElement} Rendered Header component
  */
 const Header = ({ title, noBack, noHamburger }) => {
-    // Hooks
+    /**
+     * Navigation hook for handling routing actions
+     * @constant {Object} navigation - Navigation object from React Navigation
+     */
     const navigation = useNavigation();
 
-    // Navigation handlers
-    const handleBackPress = () => navigation.goBack();
-    const handleDrawerToggle = () => navigation.dispatch(DrawerActions.toggleDrawer());
+    /**
+     * Handles the back button press event
+     * Navigates to the previous screen in the stack
+     * @function
+     * @returns {void}
+     */
+    const handleBackPress = () => {
+        navigation.goBack();
+    };
 
-    // Render
+    /**
+     * Handles the drawer toggle event
+     * Opens or closes the navigation drawer
+     * @function
+     * @returns {void}
+     */
+    const handleDrawerToggle = () => {
+        navigation.dispatch(DrawerActions.toggleDrawer());
+    };
+
     return (
         <View style={styles.background}>
             <View style={styles.top}>
-                {/* Back Button or empty space */}
+                {/* Back Button Section */}
                 {noBack ? (
                     <View style={styles.leftIcon} />
                 ) : (
@@ -34,14 +62,20 @@ const Header = ({ title, noBack, noHamburger }) => {
                         style={styles.leftIcon} 
                         onPress={handleBackPress}
                     >
-                        <Icon name="arrow-back" size={38} color="black" />
+                        <Icon 
+                            name="arrow-back" 
+                            size={38} 
+                            color="black" 
+                        />
                     </TouchableOpacity>
                 )}
 
-                {/* Header Title */}
-                <Text style={styles.title}>{title}</Text>
+                {/* Title Section */}
+                <Text style={styles.title}>
+                    {title}
+                </Text>
 
-                {/* Drawer Menu Button */}
+                {/* Hamburger Menu Section */}
                 {noHamburger ? (
                     <View style={styles.leftIcon} />
                 ) : (
@@ -49,12 +83,16 @@ const Header = ({ title, noBack, noHamburger }) => {
                         style={styles.rightIcon} 
                         onPress={handleDrawerToggle}
                     >
-                        <Icon name="menu" size={38} color="black" />
+                        <Icon 
+                            name="menu" 
+                            size={38} 
+                            color="black" 
+                        />
                     </TouchableOpacity>
                 )}
             </View>
 
-            {/* Divider Line */}
+            {/* Bottom Divider */}
             <View style={styles.horizontalRule} />
         </View>
     );

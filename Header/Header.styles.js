@@ -15,7 +15,7 @@ const styles = StyleSheet.create({
         marginTop: 30,
     },
     title: {
-        fontSize: 38,
+        fontSize: 32,
         textAlign: "center",
     },
     leftIcon: {

@@ -108,8 +108,8 @@ const CustomDrawerContent = (props) => {
                     label={screen.key}
                     onPress={() => props.navigation.navigate(screen.key)}
                     focused={focused.name === screen.key}
-                    activeBackgroundColor="#fee0e1"
-                    activeTintColor="#ff6163"
+                    activeBackgroundColor="#66a2fe"
+                    activeTintColor="#FFFFF"
                 />
             ))}
             
@@ -117,8 +117,9 @@ const CustomDrawerContent = (props) => {
             <DrawerItem
                 label="Logout"
                 onPress={handleLogout}
-                activeBackgroundColor="#fee0e1"
-                activeTintColor="#ff6163"
+                activeBackgroundColor="#d26570"
+                focused
+                activeTintColor="#FFFFF"
                 style={{ marginTop: 20 }}
             />
         </DrawerContentScrollView>
