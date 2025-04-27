@@ -1,6 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, FlatList, Image } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { db, auth } from '../../Firebase/Config';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { styles } from './styles';
+
+const SYSTEM_LIST_NAME = 'UnlistedContacts';
 
 const ListSelection = ({ 
   contactLists, 
@@ -10,8 +15,72 @@ const ListSelection = ({
   setSelectedLists,
   setSelectedContacts,
   setExpandedLists,
-  setShowMessageSelect
+  setShowMessageSelect,
+  setContactLists
 }) => {
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!auth.currentUser) {
+        console.warn('No authenticated user');
+        return;
+      }
+
+      // Listen for contacts changes first
+      const unsubscribeContacts = onSnapshot(
+        query(collection(db, 'contacts')),
+        async (contactsSnapshot) => {
+          const contactsData = contactsSnapshot.docs.reduce((acc, doc) => {
+            acc[doc.id] = { id: doc.id, ...doc.data() };
+            return acc;
+          }, {});
+
+          // Then listen for lists and update with latest contact data
+          const unsubscribeLists = onSnapshot(
+            query(
+              collection(db, 'contactLists'),
+              where('userId', '==', auth.currentUser.uid)
+            ),
+            (listsSnapshot) => {
+              const listsData = listsSnapshot.docs.map(doc => {
+                const listData = doc.data();
+                // Update contact data in each list with latest data
+                const updatedContacts = listData.contacts.map(contact => 
+                  contactsData[contact.id] || contact
+                );
+
+                return {
+                  id: doc.id,
+                  ...listData,
+                  contacts: updatedContacts
+                };
+              });
+
+              // Sort lists (UnlistedContacts at the end)
+              const sortedLists = listsData.sort((a, b) => {
+                if (a.name === SYSTEM_LIST_NAME) return 1;
+                if (b.name === SYSTEM_LIST_NAME) return -1;
+                return a.name.localeCompare(b.name);
+              });
+
+              // Update selected contacts with latest data
+              setSelectedContacts(prev => 
+                prev.map(contact => contactsData[contact.id] || contact)
+              );
+
+              setContactLists(sortedLists);
+            }
+          );
+
+          // Clean up lists listener when contacts change
+          return () => unsubscribeLists();
+        }
+      );
+
+      // Clean up contacts listener on unmount
+      return () => unsubscribeContacts();
+    }, [auth.currentUser?.uid])
+  );
+
   const toggleListExpansion = (listId) => {
     setExpandedLists(prev => 
       prev.includes(listId) 

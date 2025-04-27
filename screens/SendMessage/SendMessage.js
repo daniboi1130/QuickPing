@@ -10,8 +10,6 @@ import ConfirmationView from './ConfirmationView';
 import { styles } from './styles';
 
 const SendMessage = () => {
-  const navigation = useNavigation();
-
   const [contactLists, setContactLists] = useState([]);
   const [savedMessages, setSavedMessages] = useState([]);
   const [selectedLists, setSelectedLists] = useState([]);
@@ -191,6 +189,7 @@ const SendMessage = () => {
         ) : !showMessageSelect && !showConfirmation ? (
           <ListSelection
             contactLists={contactLists}
+            setContactLists={setContactLists}  // Add this prop
             selectedLists={selectedLists}
             selectedContacts={selectedContacts}
             expandedLists={expandedLists}

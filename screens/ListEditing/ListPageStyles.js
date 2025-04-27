@@ -169,5 +169,35 @@ export const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
     marginTop: 2,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  expandButton: {
+    padding: 10,
+    marginRight: 5,
+  },
+  expandButtonText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  expandedContacts: {
+    marginLeft: 35,
+    marginTop: 5,
+    borderLeftWidth: 1,
+    borderLeftColor: '#ddd',
+    paddingLeft: 10,
+  },
+  expandedContactItem: {
+    paddingVertical: 5,
+  },
+  contactName: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  contactPhone: {
+    fontSize: 12,
+    color: '#666',
   }
 });
