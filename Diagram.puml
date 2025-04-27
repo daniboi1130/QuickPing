@@ -1,0 +1,17 @@
+@startuml QuickPing_Flow
+
+[*] --> HomeScreen
+HomeScreen --> LoginScreen 
+HomeScreen --> RegisterScreen
+LoginScreen --> ChooseActivityScreen
+RegisterScreen --> ChooseActivityScreen
+
+ChooseActivityScreen --> ContactsEditorScreen
+ChooseActivityScreen --> ContactListScreen 
+ChooseActivityScreen --> SendMessageScreen
+
+SendMessageScreen --> SendMessageComposition
+SendMessageComposition --> SendMessageConfirmation
+SendMessageConfirmation --> [*]
+
+@enduml
