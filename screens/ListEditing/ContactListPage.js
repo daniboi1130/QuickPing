@@ -148,9 +148,36 @@ const ContactListPage = ({ navigation }) => {
     React.useCallback(() => {
       const unsubscribeContacts = onSnapshot(
         query(collection(db, 'contacts')),
-        (snapshot) => {
+        async (snapshot) => {
           const contactsArray = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setContacts(contactsArray);
+
+          // Update all lists to remove deleted contacts
+          const listsToUpdate = lists.filter(list => {
+            const hasDeletedContacts = list.contacts.some(
+              contact => !contactsArray.find(c => c.id === contact.id)
+            );
+            return hasDeletedContacts;
+          });
+
+          // Update each affected list
+          for (const list of listsToUpdate) {
+            const updatedContacts = list.contacts.filter(contact =>
+              contactsArray.find(c => c.id === contact.id)
+            );
+
+            try {
+              await updateDoc(doc(db, 'contactLists', list.id), {
+                contacts: updatedContacts,
+                updatedAt: new Date().toISOString()
+              });
+            } catch (error) {
+              console.error(`Error updating list ${list.id}:`, error);
+            }
+          }
+
+          // Run unlisted contacts check after updates
+          await manageUnlistedContacts();
         },
         (error) => {
           console.error('Error syncing contacts:', error);
@@ -177,7 +204,7 @@ const ContactListPage = ({ navigation }) => {
         unsubscribeContacts();
         unsubscribeLists();
       };
-    }, [])
+    }, [lists]) // Add lists as dependency
   );
 
   /* ------------------------------------------------------------------------ */
@@ -241,10 +268,9 @@ const ContactListPage = ({ navigation }) => {
     }
 
     try {
-      const updatedContacts = selectedContacts.map(contact => getUpdatedContact(contact));
       const listData = {
         name: listName,
-        contacts: updatedContacts,
+        contacts: selectedContacts,
         updatedAt: new Date().toISOString()
       };
 
@@ -257,6 +283,9 @@ const ContactListPage = ({ navigation }) => {
           userId: auth.currentUser?.uid
         });
       }
+
+      // Check for unlisted contacts after saving
+      await manageUnlistedContacts();
 
       resetForm();
       Alert.alert('Success', editingList ? 'List updated!' : 'List created!');
@@ -345,6 +374,71 @@ const ContactListPage = ({ navigation }) => {
   };
 
   /* ------------------------------------------------------------------------ */
+  /*                          System List Management                          */
+  /* ------------------------------------------------------------------------ */
+
+  const SYSTEM_LIST_NAME = 'UnlistedContacts';
+
+/**
+ * Check and manage unlisted personal contacts
+ * Creates or updates a system list containing personal contacts not in other lists
+ */
+const manageUnlistedContacts = async () => {
+  try {
+    // Get all personal contacts
+    const personalContacts = contacts.filter(
+      contact => contact.userId === auth.currentUser?.uid
+    );
+
+    // Get all personal lists
+    const personalLists = lists.filter(
+      list => list.userId === auth.currentUser?.uid && list.name !== SYSTEM_LIST_NAME
+    );
+
+    // Find contacts that are in personal lists
+    const listedContactIds = new Set();
+    personalLists.forEach(list => {
+      list.contacts.forEach(contact => listedContactIds.add(contact.id));
+    });
+
+    // Find personal contacts not in any personal list
+    const unlistedContacts = personalContacts.filter(
+      contact => !listedContactIds.has(contact.id)
+    );
+
+    // Find existing UnlistedContacts list
+    const systemList = lists.find(
+      list => list.userId === auth.currentUser?.uid && list.name === SYSTEM_LIST_NAME
+    );
+
+    if (unlistedContacts.length > 0) {
+      const listData = {
+        name: SYSTEM_LIST_NAME,
+        contacts: unlistedContacts,
+        updatedAt: new Date().toISOString(),
+        isSystemList: true,
+        userId: auth.currentUser?.uid
+      };
+
+      if (systemList) {
+        await updateDoc(doc(db, 'contactLists', systemList.id), listData);
+      } else {
+        await addDoc(collection(db, 'contactLists'), {
+          ...listData,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } else if (systemList) {
+      // Delete UnlistedContacts if all contacts are in lists
+      await deleteDoc(doc(db, 'contactLists', systemList.id));
+    }
+  } catch (error) {
+    console.error('Error managing unlisted contacts:', error);
+  }
+};
+
+
+  /* ------------------------------------------------------------------------ */
   /*                            Render Component                              */
   /* ------------------------------------------------------------------------ */
 
@@ -393,40 +487,45 @@ const ContactListPage = ({ navigation }) => {
                             {expandedListId === item.id ? '▼' : '▶'}
                           </Text>
                           <Text style={styles.listName}>{item.name}</Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setEditingNameListId(item.id);
-                              setEditingNameValue(item.name);
-                            }}
-                          >
-                            <Text style={styles.editNameIcon}>✎</Text>
-                          </TouchableOpacity>
+                          {!item.isSystemList && (
+                            <TouchableOpacity
+                              onPress={() => {
+                                setEditingNameListId(item.id);
+                                setEditingNameValue(item.name);
+                              }}
+                            >
+                              <Text style={styles.editNameIcon}>✎</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       )}
                       <Text style={styles.contactCount}>{item.contacts.length} contacts</Text>
                     </View>
                     
-                    <View style={styles.listActions}>
-                      <TouchableOpacity 
-                        style={[styles.actionButton, styles.editButton]}
-                        onPress={() => {
-                          setEditingList(item);
-                          setListName(item.name);
-                          setSelectedContacts(item.contacts);
-                          setIsCreating(true);
-                          setShowContacts(true);
-                        }}
-                      >
-                        <Text style={styles.actionButtonText}>Edit</Text>
-                      </TouchableOpacity>
+                    {/* Edit and Delete Buttons */}
+                    {!item.isSystemList && (
+                      <View style={styles.listActions}>
+                        <TouchableOpacity 
+                          style={[styles.actionButton, styles.editButton]}
+                          onPress={() => {
+                            setEditingList(item);
+                            setListName(item.name);
+                            setSelectedContacts(item.contacts);
+                            setIsCreating(true);
+                            setShowContacts(true);
+                          }}
+                        >
+                          <Text style={styles.actionButtonText}>Edit</Text>
+                        </TouchableOpacity>
 
-                      <TouchableOpacity 
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={() => handleDeleteList(item.id)}
-                      >
-                        <Text style={styles.actionButtonText}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
+                        <TouchableOpacity 
+                          style={[styles.actionButton, styles.deleteButton]}
+                          onPress={() => handleDeleteList(item.id)}
+                        >
+                          <Text style={styles.actionButtonText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </TouchableOpacity>
 
                   {/* Expanded Contact List */}
