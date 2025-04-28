@@ -172,32 +172,71 @@ export const styles = StyleSheet.create({
   },
   listHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  expandButton: {
     padding: 10,
-    marginRight: 5,
   },
-  expandButtonText: {
+
+  expandedList: {
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingVertical: 8,
+  },
+
+  expandedContact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+
+  contactPhoto: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+
+  contactInitials: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+
+  initialsText: {
     fontSize: 16,
     color: '#666',
+    fontWeight: 'bold',
   },
-  expandedContacts: {
-    marginLeft: 35,
-    marginTop: 5,
-    borderLeftWidth: 1,
-    borderLeftColor: '#ddd',
-    paddingLeft: 10,
+
+  contactInfo: {
+    flex: 1,
   },
-  expandedContactItem: {
-    paddingVertical: 5,
-  },
+
   contactName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
+    marginBottom: 4,
   },
+
   contactPhone: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#666',
-  }
+  },
+
+  expandButton: {
+    fontSize: 16,
+    marginRight: 8,
+    color: '#666',
+    width: 20,
+  },
+
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
 });

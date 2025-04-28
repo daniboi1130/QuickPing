@@ -35,7 +35,8 @@ import {
   TextInput, 
   TouchableOpacity, 
   FlatList, 
-  Alert 
+  Alert,
+  Image 
 } from 'react-native';
 
 /**
@@ -67,8 +68,7 @@ import {
   updateDoc, 
   query, 
   where,
-  onSnapshot,
-  setDoc
+  onSnapshot 
 } from 'firebase/firestore';
 
 /* -------------------------------------------------------------------------- */
@@ -133,8 +133,8 @@ const ContactListPage = ({ navigation }) => {
    */
   const [lists, setLists] = useState([]); // All contact lists belonging to user
 
-  // Add new state for expanded lists
-  const [expandedLists, setExpandedLists] = useState([]);
+  /* Add this to state management section, after other useState declarations */
+  const [expandedListId, setExpandedListId] = useState(null);
 
   /* ------------------------------------------------------------------------ */
   /*                     Firebase Realtime Data Synchronization               */
@@ -142,42 +142,15 @@ const ContactListPage = ({ navigation }) => {
 
   /**
    * Listen to Contacts and Lists on Focus
-   * Updates lists when contacts are deleted
+   * Automatically fetch and sync data when screen becomes active
    */
   useFocusEffect(
     React.useCallback(() => {
       const unsubscribeContacts = onSnapshot(
         query(collection(db, 'contacts')),
-        async (snapshot) => {
+        (snapshot) => {
           const contactsArray = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setContacts(contactsArray);
-
-          // Update all lists to remove deleted contacts
-          const listsToUpdate = lists.filter(list => {
-            const hasDeletedContacts = list.contacts.some(
-              contact => !contactsArray.find(c => c.id === contact.id)
-            );
-            return hasDeletedContacts;
-          });
-
-          // Update each affected list
-          for (const list of listsToUpdate) {
-            const updatedContacts = list.contacts.filter(contact =>
-              contactsArray.find(c => c.id === contact.id)
-            );
-
-            try {
-              await updateDoc(doc(db, 'contactLists', list.id), {
-                contacts: updatedContacts,
-                updatedAt: new Date().toISOString()
-              });
-            } catch (error) {
-              console.error(`Error updating list ${list.id}:`, error);
-            }
-          }
-
-          // Run unlisted contacts check after updates
-          await manageUnlistedContacts();
         },
         (error) => {
           console.error('Error syncing contacts:', error);
@@ -204,7 +177,7 @@ const ContactListPage = ({ navigation }) => {
         unsubscribeContacts();
         unsubscribeLists();
       };
-    }, [lists]) // Add lists as dependency
+    }, [])
   );
 
   /* ------------------------------------------------------------------------ */
@@ -247,76 +220,15 @@ const ContactListPage = ({ navigation }) => {
   };
 
   /**
-   * Toggle list expansion to show/hide contacts
-   * 
-   * @param {string} listId - ID of the list to toggle
+   * Handle Create List Button Click
+   * Validate list name before moving to contact selection
    */
-  const toggleListExpansion = (listId) => {
-    setExpandedLists(prev => 
-      prev.includes(listId) 
-        ? prev.filter(id => id !== listId)
-        : [...prev, listId]
-    );
-  };
-
-  const SYSTEM_LIST_NAME = 'UnlistedContacts';
-
-  /**
-   * Check and manage unlisted personal contacts
-   * Creates or updates a system list containing personal contacts not in other lists
-   */
-  const manageUnlistedContacts = async () => {
-    try {
-      // Get all personal contacts
-      const personalContacts = contacts.filter(
-        contact => contact.userId === auth.currentUser?.uid
-      );
-
-      // Get all personal lists
-      const personalLists = lists.filter(
-        list => list.userId === auth.currentUser?.uid && list.name !== SYSTEM_LIST_NAME
-      );
-
-      // Find contacts that are in personal lists
-      const listedContactIds = new Set();
-      personalLists.forEach(list => {
-        list.contacts.forEach(contact => listedContactIds.add(contact.id));
-      });
-
-      // Find personal contacts not in any personal list
-      const unlistedContacts = personalContacts.filter(
-        contact => !listedContactIds.has(contact.id)
-      );
-
-      // Find existing UnlistedContacts list
-      const systemList = lists.find(
-        list => list.userId === auth.currentUser?.uid && list.name === SYSTEM_LIST_NAME
-      );
-
-      if (unlistedContacts.length > 0) {
-        const listData = {
-          name: SYSTEM_LIST_NAME,
-          contacts: unlistedContacts,
-          updatedAt: new Date().toISOString(),
-          isSystemList: true,
-          userId: auth.currentUser?.uid
-        };
-
-        if (systemList) {
-          await updateDoc(doc(db, 'contactLists', systemList.id), listData);
-        } else {
-          await addDoc(collection(db, 'contactLists'), {
-            ...listData,
-            createdAt: new Date().toISOString()
-          });
-        }
-      } else if (systemList) {
-        // Delete UnlistedContacts if all contacts are in lists
-        await deleteDoc(doc(db, 'contactLists', systemList.id));
-      }
-    } catch (error) {
-      console.error('Error managing unlisted contacts:', error);
+  const handleCreateList = () => {
+    if (!listName.trim()) {
+      Alert.alert('Error', 'Please enter a list name.');
+      return;
     }
+    setShowContacts(true);
   };
 
   /**
@@ -329,9 +241,10 @@ const ContactListPage = ({ navigation }) => {
     }
 
     try {
+      const updatedContacts = selectedContacts.map(contact => getUpdatedContact(contact));
       const listData = {
         name: listName,
-        contacts: selectedContacts,
+        contacts: updatedContacts,
         updatedAt: new Date().toISOString()
       };
 
@@ -344,9 +257,6 @@ const ContactListPage = ({ navigation }) => {
           userId: auth.currentUser?.uid
         });
       }
-
-      // Check for unlisted contacts after saving
-      await manageUnlistedContacts();
 
       resetForm();
       Alert.alert('Success', editingList ? 'List updated!' : 'List created!');
@@ -424,6 +334,16 @@ const ContactListPage = ({ navigation }) => {
     resetForm();
   };
 
+  /**
+   * Ensure contact data is up to date with latest photos
+   * @param {Object} contact - Contact to update
+   * @returns {Object} Updated contact with latest photo
+   */
+  const getUpdatedContact = (contact) => {
+    const latestContact = contacts.find(c => c.id === contact.id);
+    return latestContact || contact;
+  };
+
   /* ------------------------------------------------------------------------ */
   /*                            Render Component                              */
   /* ------------------------------------------------------------------------ */
@@ -452,54 +372,40 @@ const ContactListPage = ({ navigation }) => {
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={styles.listItem}>
-                  {/* List Header with Expand Button */}
-                  <View style={styles.listHeader}>
-                    <TouchableOpacity 
-                      style={styles.expandButton}
-                      onPress={() => toggleListExpansion(item.id)}
-                    >
-                      <Text style={styles.expandButtonText}>
-                        {expandedLists.includes(item.id) ? '▼' : '▶'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {/* List Name and Inline Edit */}
+                  {/* List Header with Name and Controls */}
+                  <TouchableOpacity 
+                    style={styles.listHeader}
+                    onPress={() => setExpandedListId(expandedListId === item.id ? null : item.id)}
+                  >
                     <View style={styles.nameContainer}>
-                      <Text style={styles.listName}>{item.name}</Text>
-                      {!item.isSystemList && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            setEditingNameListId(item.id);
-                            setEditingNameValue(item.name);
-                          }}
-                        >
-                          <Text style={styles.editNameIcon}>✎</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Contact Count */}
-                  <Text style={styles.contactCount}>{item.contacts.length} contacts</Text>
-
-                  {/* Expanded Contacts List */}
-                  {expandedLists.includes(item.id) && (
-                    <View style={styles.expandedContacts}>
-                      {item.contacts.map(contact => (
-                        <View key={contact.id} style={styles.expandedContactItem}>
-                          <Text style={styles.contactName}>
-                            {contact.firstName} {contact.lastName}
+                      {editingNameListId === item.id ? (
+                        <TextInput
+                          style={styles.nameEditInput}
+                          value={editingNameValue}
+                          onChangeText={setEditingNameValue}
+                          autoFocus
+                          onBlur={() => handleUpdateListName(item.id, editingNameValue)}
+                          onSubmitEditing={() => handleUpdateListName(item.id, editingNameValue)}
+                        />
+                      ) : (
+                        <View style={styles.nameRow}>
+                          <Text style={styles.expandButton}>
+                            {expandedListId === item.id ? '▼' : '▶'}
                           </Text>
-                          <Text style={styles.contactPhone}>
-                            {contact.phoneNumber}
-                          </Text>
+                          <Text style={styles.listName}>{item.name}</Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setEditingNameListId(item.id);
+                              setEditingNameValue(item.name);
+                            }}
+                          >
+                            <Text style={styles.editNameIcon}>✎</Text>
+                          </TouchableOpacity>
                         </View>
-                      ))}
+                      )}
+                      <Text style={styles.contactCount}>{item.contacts.length} contacts</Text>
                     </View>
-                  )}
-
-                  {/* Edit and Delete Buttons */}
-                  {!item.isSystemList && (
+                    
                     <View style={styles.listActions}>
                       <TouchableOpacity 
                         style={[styles.actionButton, styles.editButton]}
@@ -520,6 +426,39 @@ const ContactListPage = ({ navigation }) => {
                       >
                         <Text style={styles.actionButtonText}>Delete</Text>
                       </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Expanded Contact List */}
+                  {expandedListId === item.id && (
+                    <View style={styles.expandedList}>
+                      {item.contacts.map((contact) => {
+                        const updatedContact = getUpdatedContact(contact);
+                        return (
+                          <View key={contact.id} style={styles.expandedContact}>
+                            {updatedContact.photoUri ? (
+                              <Image 
+                                source={{ uri: updatedContact.photoUri }} 
+                                style={styles.contactPhoto} 
+                              />
+                            ) : (
+                              <View style={styles.contactInitials}>
+                                <Text style={styles.initialsText}>
+                                  {updatedContact.firstName?.[0]?.toUpperCase() || ''}{updatedContact.lastName?.[0]?.toUpperCase() || ''}
+                                </Text>
+                              </View>
+                            )}
+                            <View style={styles.contactInfo}>
+                              <Text style={styles.contactName}>
+                                {updatedContact.firstName} {updatedContact.lastName}
+                              </Text>
+                              <Text style={styles.contactPhone}>
+                                {updatedContact.phoneNumber}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
                 </View>
