@@ -134,7 +134,7 @@ const ContactListPage = ({ navigation }) => {
   const [lists, setLists] = useState([]); // All contact lists belonging to user
 
   /* Add this to state management section, after other useState declarations */
-  const [expandedListId, setExpandedListId] = useState(null);
+  const [expandedListIds, setExpandedListIds] = useState([]); // Replace expandedListId state
 
   // Add this state to track updates
   const [isUpdatingUnlisted, setIsUpdatingUnlisted] = useState(false);
@@ -504,7 +504,15 @@ const manageUnlistedContacts = async () => {
                   {/* List Header with Name and Controls */}
                   <TouchableOpacity 
                     style={styles.listHeader}
-                    onPress={() => setExpandedListId(expandedListId === item.id ? null : item.id)}
+                    onPress={() => {
+                      setExpandedListIds(current => {
+                        if (current.includes(item.id)) {
+                          return current.filter(id => id !== item.id);
+                        } else {
+                          return [...current, item.id];
+                        }
+                      });
+                    }}
                   >
                     <View style={styles.nameContainer}>
                       {editingNameListId === item.id ? (
@@ -519,7 +527,7 @@ const manageUnlistedContacts = async () => {
                       ) : (
                         <View style={styles.nameRow}>
                           <Text style={styles.expandButton}>
-                            {expandedListId === item.id ? '▼' : '▶'}
+                            {expandedListIds.includes(item.id) ? '▼' : '▶'}
                           </Text>
                           <Text style={styles.listName}>{item.name}</Text>
                           {!item.isSystemList && (
@@ -564,7 +572,7 @@ const manageUnlistedContacts = async () => {
                   </TouchableOpacity>
 
                   {/* Expanded Contact List */}
-                  {expandedListId === item.id && (
+                  {expandedListIds.includes(item.id) && (
                     <View style={styles.expandedList}>
                       {item.contacts.map((contact) => {
                         const updatedContact = getUpdatedContact(contact);
