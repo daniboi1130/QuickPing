@@ -10,6 +10,8 @@ import ConfirmationView from './ConfirmationView';
 import { styles } from './styles';
 
 const SendMessage = () => {
+  const navigation = useNavigation(); // Add this at the top with other hooks
+  
   const [contactLists, setContactLists] = useState([]);
   const [savedMessages, setSavedMessages] = useState([]);
   const [selectedLists, setSelectedLists] = useState([]);
@@ -39,10 +41,12 @@ const SendMessage = () => {
             setCurrentIndex(nextIndex);
             sendNextMessage(nextIndex);
           } else {
-            Alert.alert('Success', `Successfully sent messages to ${sendingContacts.length} contacts.`, [
-              { text: 'OK', onPress: completeMessaging }
-            ]);
-            setIsAutoSending(false);
+            // All messages sent
+            Alert.alert(
+              'Success', 
+              `Successfully sent messages to ${sendingContacts.length} contacts.`,
+              [{ text: 'OK', onPress: completeMessaging }]
+            );
           }
           setWaitingToSendNext(false);
         }
@@ -52,6 +56,15 @@ const SendMessage = () => {
 
     return () => subscription.remove();
   }, [appState, isAutoSending, waitingToSendNext, currentIndex, sendingContacts]);
+
+  useEffect(() => {
+    // Cleanup on component unmount
+    return () => {
+      if (isAutoSending) {
+        completeMessaging();
+      }
+    };
+  }, []);
 
   const fetchContactLists = async () => {
     try {
@@ -102,70 +115,114 @@ const SendMessage = () => {
   const getTotalContacts = () => selectedContacts.length;
 
   const completeMessaging = () => {
+    // Reset all states
     setIsAutoSending(false);
     setCurrentIndex(0);
+    setSendingContacts([]);
     setSelectedLists([]);
     setSelectedContacts([]);
     setCustomMessage('');
     setShowConfirmation(false);
     setShowMessageSelect(false);
-    navigation.navigate('ChooseActivity');
+    setWaitingToSendNext(false);
+    setExpandedLists([]);
   };
 
   const handleSendMessage = async () => {
-    const uniqueContacts = new Set();
-
-    selectedLists.forEach(list => {
-      const foundList = contactLists.find(cl => cl.id === list.id);
-      if (foundList?.contacts) {
-        foundList.contacts.forEach(contact => uniqueContacts.add(JSON.stringify(contact)));
-      }
-    });
-    selectedContacts.forEach(contact => uniqueContacts.add(JSON.stringify(contact)));
-
-    const contactsArray = Array.from(uniqueContacts).map(contact => JSON.parse(contact));
-
-    if (contactsArray.length === 0) {
-      Alert.alert('Error', 'No contacts selected.');
-      return;
-    }
-
-    setSendingContacts(contactsArray);
-    setIsAutoSending(true);
-    setCurrentIndex(0);
-    sendNextMessage(0);
-  };
-
-  const sendNextMessage = async (index) => {
-    if (index >= sendingContacts.length) {
-      Alert.alert('Success', `Successfully sent messages to ${sendingContacts.length} contacts.`, [
-        { text: 'OK', onPress: completeMessaging }
-      ]);
-      setIsAutoSending(false);
-      return;
-    }
-
-    const contact = sendingContacts[index];
-    let phoneNumber = contact.phoneNumber.replace(/\D/g, '');
-    if (phoneNumber.startsWith('0')) {
-      phoneNumber = phoneNumber.substring(1);
-    }
-    if (!phoneNumber.startsWith('972')) {
-      phoneNumber = '972' + phoneNumber;
-    }
-
-    const messageText = encodeURIComponent(customMessage);
-    const waUrl = `https://wa.me/${phoneNumber}?text=${messageText}`;
-
-    console.log('Opening WhatsApp link:', waUrl);
-
     try {
-      await Linking.openURL(waUrl);
-      setWaitingToSendNext(true);
+      // Basic validations
+      if (!customMessage.trim()) {
+        Alert.alert('Error', 'Please enter a message');
+        return;
+      }
+  
+      // Collect all contacts from lists and individual selections
+      const allContacts = [];
+      
+      // Add contacts from selected lists
+      selectedLists.forEach(list => {
+        const foundList = contactLists.find(cl => cl.id === list.id);
+        if (foundList?.contacts) {
+          allContacts.push(...foundList.contacts);
+        }
+      });
+  
+      // Add individual contacts
+      allContacts.push(...selectedContacts);
+  
+      // Remove duplicates and invalid contacts
+      const validContacts = [...new Set(allContacts.filter(c => c?.phoneNumber))];
+  
+      if (validContacts.length === 0) {
+        Alert.alert('Error', 'No valid contacts selected');
+        return;
+      }
+  
+      // Start sending process
+      setSendingContacts(validContacts);
+      setCurrentIndex(0);
+      setIsAutoSending(true);
+      
+      // Send first message
+      sendNextMessage(0, validContacts);
     } catch (error) {
-      console.error('Failed to open WhatsApp:', error);
-      Alert.alert('Error', 'Failed to open WhatsApp. Please make sure WhatsApp is installed.');
-      setIsAutoSending(false);
+      Alert.alert('Error', 'Failed to start sending messages');
+    }
+  };
+  
+  const sendNextMessage = async (index, contacts = sendingContacts) => {
+    try {
+      if (index >= contacts.length) {
+        Alert.alert(
+          'Success', 
+          `Sent messages to ${contacts.length} contacts`,
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              setIsAutoSending(false);
+              navigation.navigate('ChooseActivity');
+            }
+          }]
+        );
+        return;
+      }
+  
+      // Get current contact
+      const contact = contacts[index];
+      let phoneNumber = contact.phoneNumber.replace(/\D/g, '');
+      
+      // Format number
+      if (phoneNumber.startsWith('0')) {
+        phoneNumber = phoneNumber.substring(1);
+      }
+      if (!phoneNumber.startsWith('972')) {
+        phoneNumber = '972' + phoneNumber;
+      }
+  
+      // Open WhatsApp
+      const message = encodeURIComponent(customMessage);
+      const waUrl = `https://wa.me/${phoneNumber}?text=${message}`;
+      await Linking.openURL(waUrl);
+      
+      // Wait for next
+      setWaitingToSendNext(true);
+      setCurrentIndex(index);
+  
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Failed to send message',
+        [
+          { 
+            text: 'Stop', 
+            onPress: () => {
+              setIsAutoSending(false);
+              navigation.navigate('ChooseActivity');
+            }
+          },
+          { text: 'Skip', onPress: () => sendNextMessage(index + 1, contacts) }
+        ]
+      );
     }
   };
 

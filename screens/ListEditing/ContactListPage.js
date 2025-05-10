@@ -136,6 +136,9 @@ const ContactListPage = ({ navigation }) => {
   /* Add this to state management section, after other useState declarations */
   const [expandedListId, setExpandedListId] = useState(null);
 
+  // Add this state to track updates
+  const [isUpdatingUnlisted, setIsUpdatingUnlisted] = useState(false);
+
   /* ------------------------------------------------------------------------ */
   /*                     Firebase Realtime Data Synchronization               */
   /* ------------------------------------------------------------------------ */
@@ -150,9 +153,15 @@ const ContactListPage = ({ navigation }) => {
         query(collection(db, 'contacts')),
         async (snapshot) => {
           const contactsArray = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const previousContacts = contacts;
           setContacts(contactsArray);
 
-          // Update all lists to remove deleted contacts
+          // Check if contacts were added or deleted
+          if (previousContacts.length !== contactsArray.length) {
+            await updateUnlistedContactsOnce();
+          }
+
+          // Update lists with deleted contacts
           const listsToUpdate = lists.filter(list => {
             const hasDeletedContacts = list.contacts.some(
               contact => !contactsArray.find(c => c.id === contact.id)
@@ -160,7 +169,6 @@ const ContactListPage = ({ navigation }) => {
             return hasDeletedContacts;
           });
 
-          // Update each affected list
           for (const list of listsToUpdate) {
             const updatedContacts = list.contacts.filter(contact =>
               contactsArray.find(c => c.id === contact.id)
@@ -175,13 +183,6 @@ const ContactListPage = ({ navigation }) => {
               console.error(`Error updating list ${list.id}:`, error);
             }
           }
-
-          // Run unlisted contacts check after updates
-          await manageUnlistedContacts();
-        },
-        (error) => {
-          console.error('Error syncing contacts:', error);
-          Alert.alert('Error', 'Failed to sync contacts.');
         }
       );
 
@@ -284,9 +285,7 @@ const ContactListPage = ({ navigation }) => {
         });
       }
 
-      // Check for unlisted contacts after saving
-      await manageUnlistedContacts();
-
+      await updateUnlistedContactsOnce();
       resetForm();
       Alert.alert('Success', editingList ? 'List updated!' : 'List created!');
     } catch (error) {
@@ -312,6 +311,7 @@ const ContactListPage = ({ navigation }) => {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, 'contactLists', listId));
+              await updateUnlistedContactsOnce();
               Alert.alert('Deleted', 'List successfully deleted.');
             } catch (error) {
               console.error('Error deleting list:', error);
@@ -373,6 +373,18 @@ const ContactListPage = ({ navigation }) => {
     return latestContact || contact;
   };
 
+  // Create a wrapper function to ensure single execution
+  const updateUnlistedContactsOnce = async () => {
+    if (isUpdatingUnlisted) return;
+    
+    try {
+      setIsUpdatingUnlisted(true);
+      await manageUnlistedContacts();
+    } finally {
+      setIsUpdatingUnlisted(false);
+    }
+  };
+
   /* ------------------------------------------------------------------------ */
   /*                          System List Management                          */
   /* ------------------------------------------------------------------------ */
@@ -385,47 +397,62 @@ const ContactListPage = ({ navigation }) => {
  */
 const manageUnlistedContacts = async () => {
   try {
-    // Get all personal contacts
-    const personalContacts = contacts.filter(
-      contact => contact.userId === auth.currentUser?.uid
+    // First fetch fresh data from Firestore
+    const contactsSnapshot = await getDocs(
+      query(collection(db, 'contacts'), 
+      where('userId', '==', auth.currentUser?.uid))
     );
+    const allPersonalContacts = contactsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
 
-    // Get all personal lists
-    const personalLists = lists.filter(
-      list => list.userId === auth.currentUser?.uid && list.name !== SYSTEM_LIST_NAME
+    // Exit if no contacts
+    if (!allPersonalContacts.length) return;
+
+    // Get all non-system lists
+    const listsSnapshot = await getDocs(
+      query(collection(db, 'contactLists'),
+      where('userId', '==', auth.currentUser?.uid))
     );
+    
+    // Get regular lists (excluding UnlistedContacts)
+    const regularLists = listsSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(list => !list.isSystemList && list.name !== SYSTEM_LIST_NAME);
 
-    // Find contacts that are in personal lists
-    const listedContactIds = new Set();
-    personalLists.forEach(list => {
-      list.contacts.forEach(contact => listedContactIds.add(contact.id));
+    // Build Set of ALL contacts that appear in ANY regular list
+    const contactsInRegularLists = new Set();
+    regularLists.forEach(list => {
+      list.contacts?.forEach(contact => {
+        if (contact?.id) contactsInRegularLists.add(contact.id);
+      });
     });
 
-    // Find personal contacts not in any personal list
-    const unlistedContacts = personalContacts.filter(
-      contact => !listedContactIds.has(contact.id)
+    // Find contacts that don't appear in ANY regular list
+    const trulyUnlistedContacts = allPersonalContacts.filter(
+      contact => !contactsInRegularLists.has(contact.id)
     );
 
-    // Find ALL existing UnlistedContacts lists
-    const systemLists = lists.filter(
-      list => list.userId === auth.currentUser?.uid && list.name === SYSTEM_LIST_NAME
+    // Find existing UnlistedContacts list
+    const systemListSnapshot = await getDocs(
+      query(collection(db, 'contactLists'),
+      where('userId', '==', auth.currentUser?.uid),
+      where('name', '==', SYSTEM_LIST_NAME))
     );
+    const systemList = systemListSnapshot.docs[0];
 
-    // Delete any duplicate system lists
-    if (systemLists.length > 1) {
-      const [keepList, ...duplicateLists] = systemLists;
-      for (const list of duplicateLists) {
-        await deleteDoc(doc(db, 'contactLists', list.id));
+    // Handle the UnlistedContacts list based on unlisted contacts
+    if (trulyUnlistedContacts.length === 0) {
+      // Delete UnlistedContacts list if it exists and we have no unlisted contacts
+      if (systemList) {
+        await deleteDoc(doc(db, 'contactLists', systemList.id));
       }
-    }
-
-    // Get the single system list (if it exists)
-    const systemList = systemLists[0];
-
-    if (unlistedContacts.length > 0) {
+    } else {
+      // We have unlisted contacts - create or update the list
       const listData = {
         name: SYSTEM_LIST_NAME,
-        contacts: unlistedContacts,
+        contacts: trulyUnlistedContacts,
         updatedAt: new Date().toISOString(),
         isSystemList: true,
         userId: auth.currentUser?.uid
@@ -434,23 +461,11 @@ const manageUnlistedContacts = async () => {
       if (systemList) {
         await updateDoc(doc(db, 'contactLists', systemList.id), listData);
       } else {
-        // Check one more time before creating to prevent race conditions
-        const snapshot = await getDocs(query(
-          collection(db, 'contactLists'),
-          where('userId', '==', auth.currentUser?.uid),
-          where('name', '==', SYSTEM_LIST_NAME)
-        ));
-        
-        if (snapshot.empty) {
-          await addDoc(collection(db, 'contactLists'), {
-            ...listData,
-            createdAt: new Date().toISOString()
-          });
-        }
+        await addDoc(collection(db, 'contactLists'), {
+          ...listData,
+          createdAt: new Date().toISOString()
+        });
       }
-    } else if (systemList) {
-      // Delete UnlistedContacts if all contacts are in lists
-      await deleteDoc(doc(db, 'contactLists', systemList.id));
     }
   } catch (error) {
     console.error('Error managing unlisted contacts:', error);
