@@ -406,10 +406,21 @@ const manageUnlistedContacts = async () => {
       contact => !listedContactIds.has(contact.id)
     );
 
-    // Find existing UnlistedContacts list
-    const systemList = lists.find(
+    // Find ALL existing UnlistedContacts lists
+    const systemLists = lists.filter(
       list => list.userId === auth.currentUser?.uid && list.name === SYSTEM_LIST_NAME
     );
+
+    // Delete any duplicate system lists
+    if (systemLists.length > 1) {
+      const [keepList, ...duplicateLists] = systemLists;
+      for (const list of duplicateLists) {
+        await deleteDoc(doc(db, 'contactLists', list.id));
+      }
+    }
+
+    // Get the single system list (if it exists)
+    const systemList = systemLists[0];
 
     if (unlistedContacts.length > 0) {
       const listData = {
@@ -423,10 +434,19 @@ const manageUnlistedContacts = async () => {
       if (systemList) {
         await updateDoc(doc(db, 'contactLists', systemList.id), listData);
       } else {
-        await addDoc(collection(db, 'contactLists'), {
-          ...listData,
-          createdAt: new Date().toISOString()
-        });
+        // Check one more time before creating to prevent race conditions
+        const snapshot = await getDocs(query(
+          collection(db, 'contactLists'),
+          where('userId', '==', auth.currentUser?.uid),
+          where('name', '==', SYSTEM_LIST_NAME)
+        ));
+        
+        if (snapshot.empty) {
+          await addDoc(collection(db, 'contactLists'), {
+            ...listData,
+            createdAt: new Date().toISOString()
+          });
+        }
       }
     } else if (systemList) {
       // Delete UnlistedContacts if all contacts are in lists

@@ -6,7 +6,6 @@ import {
   TouchableOpacity, 
   Image,
   Dimensions,
-  Animated,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { auth } from '../Firebase/Config';
@@ -14,29 +13,18 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 function HomeScreen({ navigation }) {
   const [user, setUser] = useState(null);
-  const fadeAnim = new Animated.Value(0);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
     });
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1500,
-      useNativeDriver: true,
-    }).start();
-
     return unsubscribe;
   }, []);
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
-      <Animated.View style={[
-        styles.contentContainer,
-        { opacity: fadeAnim }
-      ]}>
+      <View style={styles.contentContainer}>
         <View style={styles.logoContainer}>
           <Image
             source={require('../assets/Logo.png')}
@@ -52,7 +40,7 @@ function HomeScreen({ navigation }) {
         >
           <Text style={styles.buttonText}>GET STARTED</Text>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
     </View>
   );
 }
